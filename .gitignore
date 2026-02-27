@@ -1,0 +1,29 @@
+# Build outputs
+bin/
+obj/
+
+# User-specific files
+*.user
+*.userosscache
+*.suo
+*.sln.docstates
+
+# Tooling metadata
+.vs/
+.vscode/
+.idea/
+
+# OS / editor clutter
+*.DS_Store
+*.swp
+Thumbs.db
+
+# Logs and temporary data
+*.log
+logs/
+tmp/
+
+# Environment / secrets
+.env
+.env.*
+
