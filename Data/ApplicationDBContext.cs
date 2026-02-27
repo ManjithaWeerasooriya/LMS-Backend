@@ -7,7 +7,7 @@ namespace LMS_Backend.Data;
 
 public class ApplicationDBContext : IdentityDbContext<User>
 {
-    public ApplicationDBContext(DbContextOptions options) : base(options)
+    public ApplicationDBContext(DbContextOptions<ApplicationDBContext> options) : base(options)
     {
     }
 }
