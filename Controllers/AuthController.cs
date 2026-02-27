@@ -110,7 +110,11 @@ public class AuthController : ControllerBase
         var role = roles.FirstOrDefault() ?? "Student";
 
         var (accessToken, expiresIn) = await _tokenService.CreateAccessTokenAsync(user);
-        var refreshToken = await _tokenService.CreateAndStoreRefreshTokenAsync(user);
+
+        var userAgent = Request.Headers.UserAgent.ToString();
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+
+        var refreshToken = await _tokenService.CreateOrReplaceRefreshTokenAsync(user, req.DeviceId, userAgent, ip);
 
         return Ok(new
         {
@@ -130,20 +134,21 @@ public class AuthController : ControllerBase
 
     // Refresh endpoint (client sends refreshToken)
     [HttpPost("refresh")]
-    public async Task<IActionResult> Refresh([FromBody] string refreshToken)
+    public async Task<IActionResult> Refresh([FromBody] RefreshRequest req)
     {
-        var user = await _tokenService.ValidateRefreshTokenAsync(refreshToken);
+        var user = await _tokenService.ValidateRefreshTokenAsync(req.RefreshToken, req.DeviceId);
         if (user == null || user.Status != UserStatus.Active)
             return Unauthorized(new { message = "Invalid refresh token." });
-
-        // rotate refresh token (recommended)
-        await _tokenService.RevokeRefreshTokenAsync(refreshToken);
 
         var roles = await _userManager.GetRolesAsync(user);
         var role = roles.FirstOrDefault() ?? "Student";
 
         var (accessToken, expiresIn) = await _tokenService.CreateAccessTokenAsync(user);
-        var newRefreshToken = await _tokenService.CreateAndStoreRefreshTokenAsync(user);
+
+        var userAgent = Request.Headers.UserAgent.ToString();
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+        
+        var newRefreshToken = await _tokenService.CreateOrReplaceRefreshTokenAsync(user, req.DeviceId, userAgent, ip);
 
         return Ok(new
         {
@@ -162,9 +167,9 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("logout")]
-    public async Task<IActionResult> Logout([FromBody] string refreshToken)
+    public async Task<IActionResult> Logout([FromBody] LogoutRequest req)
     {
-        await _tokenService.RevokeRefreshTokenAsync(refreshToken);
+        await _tokenService.RevokeRefreshTokenAsync(req.RefreshToken, req.DeviceId);
         return Ok(new { message = "Logged out." });
     }
 }

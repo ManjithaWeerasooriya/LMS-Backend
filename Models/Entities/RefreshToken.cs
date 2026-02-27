@@ -20,6 +20,13 @@ public class RefreshToken
     [Required]
     public string UserId { get; set; } = default!;
 
+    [Required]
+    public string DeviceId { get; set; } = default!;
+
+    public DateTime LastUsedAt { get; set; } = DateTime.UtcNow;
+    public string? UserAgent { get; set; }
+    public string? IpAddress { get; set; }
+
     [ForeignKey(nameof(UserId))]
     public User User { get; set; } = default!;
 }

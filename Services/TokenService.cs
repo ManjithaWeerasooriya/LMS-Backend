@@ -79,25 +79,69 @@ public class TokenService
         return refreshToken;
     }
 
-    public async Task<User?> ValidateRefreshTokenAsync(string refreshToken)
+    public async Task<User?> ValidateRefreshTokenAsync(string refreshToken, string deviceId)
     {
         var rt = await _db.RefreshTokens
             .Include(x => x.User)
-            .FirstOrDefaultAsync(x => x.Token == refreshToken);
+            .FirstOrDefaultAsync(x => x.Token == refreshToken && x.DeviceId == deviceId);
 
         if (rt == null) return null;
         if (rt.RevokedAt != null) return null;
         if (rt.ExpiresAt < DateTime.UtcNow) return null;
 
+        rt.LastUsedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
         return rt.User;
     }
 
-    public async Task RevokeRefreshTokenAsync(string refreshToken)
+    public async Task RevokeRefreshTokenAsync(string refreshToken, string deviceId)
     {
-        var rt = await _db.RefreshTokens.FirstOrDefaultAsync(x => x.Token == refreshToken);
+        var rt = await _db.RefreshTokens
+            .FirstOrDefaultAsync(x => x.Token == refreshToken && x.DeviceId == deviceId);
+        
         if (rt == null) return;
 
         rt.RevokedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
+    }
+
+    public async Task<string> CreateOrReplaceRefreshTokenAsync(User user, string deviceId, string? userAgent, string? ip)
+    {
+        var jwt = _config.GetSection("Jwt");
+        var days = int.Parse(jwt["RefreshTokenDays"]!);
+
+        var bytes = RandomNumberGenerator.GetBytes(64);
+        var refreshToken = Convert.ToBase64String(bytes);
+
+        var existing = await _db.RefreshTokens
+            .FirstOrDefaultAsync(x => x.UserId == user.Id && x.DeviceId == deviceId);
+
+        if (existing == null)
+        {
+            _db.RefreshTokens.Add(new RefreshToken
+            {
+                UserId = user.Id,
+                DeviceId = deviceId,
+                Token = refreshToken,
+                ExpiresAt = DateTime.UtcNow.AddDays(days),
+                UserAgent = userAgent,
+                IpAddress = ip,
+                LastUsedAt = DateTime.UtcNow
+            });
+        }
+        else
+        {
+            // Replace token in the same row (keeps table size stable)
+            existing.Token = refreshToken;
+            existing.ExpiresAt = DateTime.UtcNow.AddDays(days);
+            existing.RevokedAt = null;
+            existing.UserAgent = userAgent;
+            existing.IpAddress = ip;
+            existing.LastUsedAt = DateTime.UtcNow;
+        }
+
+        await _db.SaveChangesAsync();
+        return refreshToken;
     }
 }
