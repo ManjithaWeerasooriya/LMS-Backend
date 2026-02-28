@@ -17,10 +17,13 @@ builder.Services.AddControllers();
 builder.Services.AddDbContext<ApplicationDBContext>(options => 
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
+
 builder.Services
     .AddIdentity<User, IdentityRole>(options =>
     {
         options.User.RequireUniqueEmail = true;
+        options.SignIn.RequireConfirmedEmail = true;
         options.Password.RequiredLength = 8;
     })
     .AddEntityFrameworkStores<ApplicationDBContext>()
