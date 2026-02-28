@@ -3,6 +3,8 @@ using LMS_Backend.Models.Entities;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using LMS_Backend.Services;
+using Microsoft.AspNetCore.WebUtilities;
+using System.Text;
 
 namespace LMS_Backend.Controllers;
 
@@ -14,17 +16,23 @@ public class AuthController : ControllerBase
     private readonly RoleManager<IdentityRole> _roleManager;
     private readonly SignInManager<User> _signInManager;
     private readonly TokenService _tokenService;
+    private readonly IConfiguration _config;
+    private readonly IEmailSender _emailSender;
 
     public AuthController(
         UserManager<User> userManager,
         RoleManager<IdentityRole> roleManager,
         SignInManager<User> signInManager,
-        TokenService tokenService)
+        TokenService tokenService,
+        IConfiguration config,
+        IEmailSender emailSender)
     {
         _userManager = userManager;
         _roleManager = roleManager;
         _signInManager = signInManager;
         _tokenService = tokenService;
+        _config = config;
+        _emailSender = emailSender;
     }
 
     [HttpPost("register")]
@@ -68,6 +76,30 @@ public class AuthController : ControllerBase
             });
         }
 
+        var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+
+        var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
+
+        var verifyUrl =
+            Url.Action(
+                action: "ConfirmEmail",
+                controller: "Auth",
+                values: new { userId = user.Id, token = encodedToken },
+                protocol: Request.Scheme
+            );
+
+        await _emailSender.SendEmailAsync(
+            user.Email!,
+            "Verify your email",
+            $"""
+            <p>Hi {user.FirstName ?? "there"},</p>
+            <p>Please verify your email by clicking the link below:</p>
+            <p><a href="{verifyUrl}">Verify Email</a></p>
+            <p>If you didn’t create this account, ignore this email.</p>
+            """
+        );
+        // IMPORTANT: user must NOT be able to login until EmailConfirmed is true.
+
         // Ensure the target role exists
         if (!await _roleManager.RoleExistsAsync(normalizedRole))
             await _roleManager.CreateAsync(new IdentityRole(normalizedRole));
@@ -98,6 +130,13 @@ public class AuthController : ControllerBase
 
         if (user.Status != UserStatus.Active)
             return Unauthorized(new { message = $"User is {user.Status}." });
+
+        if (!user.EmailConfirmed)
+            return Unauthorized(new { message = "Please verify your email before logging in." });
+
+        // Existing rule still applies:
+        if (user.Status != UserStatus.Active)
+            return Unauthorized(new { message = $"User is {user.Status}." });    
 
         var result = await _signInManager.CheckPasswordSignInAsync(user, req.Password, lockoutOnFailure: true);
         if (!result.Succeeded)
@@ -171,5 +210,42 @@ public class AuthController : ControllerBase
     {
         await _tokenService.RevokeRefreshTokenAsync(req.RefreshToken, req.DeviceId);
         return Ok(new { message = "Logged out." });
+    }
+
+    [HttpGet("confirm-email")]
+    public async Task<IActionResult> ConfirmEmail([FromQuery] string userId, [FromQuery] string token)
+    {
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user == null) return BadRequest(new { message = "Invalid user." });
+
+        var decodedToken = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(token));
+
+        var result = await _userManager.ConfirmEmailAsync(user, decodedToken);
+        if (!result.Succeeded)
+            return BadRequest(new { message = "Email verification failed.", errors = result.Errors.Select(e => e.Description) });
+
+        return Ok(new { message = "Email verified successfully. You can now login (teachers still require admin approval)." });
+    }
+
+    [HttpPost("resend-verification")]
+    public async Task<IActionResult> ResendVerification([FromBody] string email)
+    {
+        var user = await _userManager.FindByEmailAsync(email);
+        if (user == null) return Ok(new { message = "If the account exists, a verification email was sent." });
+        if (user.EmailConfirmed) return Ok(new { message = "Email is already verified." });
+
+        var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+        var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
+        var verifyUrl =
+            Url.Action(
+                action: "ConfirmEmail",
+                controller: "Auth",
+                values: new { userId = user.Id, token = encodedToken },
+                protocol: Request.Scheme
+            );
+
+        await _emailSender.SendEmailAsync(user.Email!, "Verify your email", $"<p><a href=\"{verifyUrl}\">Verify Email</a></p>");
+
+        return Ok(new { message = "Verification email sent." });
     }
 }
