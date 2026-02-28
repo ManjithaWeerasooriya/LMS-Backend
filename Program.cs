@@ -10,6 +10,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 
+LoadEnvFile();
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
@@ -114,3 +116,37 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+static void LoadEnvFile()
+{
+    var envPath = Path.Combine(Directory.GetCurrentDirectory(), ".env");
+    if (!File.Exists(envPath))
+    {
+        return;
+    }
+
+    foreach (var line in File.ReadAllLines(envPath))
+    {
+        var trimmed = line.Trim();
+        if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith("#"))
+        {
+            continue;
+        }
+
+        var separatorIndex = trimmed.IndexOf('=');
+        if (separatorIndex <= 0)
+        {
+            continue;
+        }
+
+        var key = trimmed[..separatorIndex].Trim();
+        var value = trimmed[(separatorIndex + 1)..].Trim();
+
+        if (value.Length >= 2 && value.StartsWith("\"") && value.EndsWith("\""))
+        {
+            value = value[1..^1];
+        }
+
+        Environment.SetEnvironmentVariable(key, value);
+    }
+}
