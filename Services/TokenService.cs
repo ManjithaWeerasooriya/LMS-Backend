@@ -39,7 +39,10 @@ public class TokenService
             new(JwtRegisteredClaimNames.Email, user.Email ?? ""),
             new(ClaimTypes.Name, user.UserName ?? user.Email ?? ""),
             new(ClaimTypes.Role, primaryRole),
-            new("status", user.Status.ToString())
+            new("status", user.Status.ToString()),
+
+            // used to invalidate old JWTs after password change
+            new("AspNet.Identity.SecurityStamp", user.SecurityStamp ?? string.Empty)
         };
 
         var minutes = int.Parse(jwt["AccessTokenMinutes"]!);
@@ -103,6 +106,23 @@ public class TokenService
         if (rt == null) return;
 
         rt.RevokedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task RevokeAllRefreshTokensForUserAsync(string userId)
+    {
+        var tokens = await _db.RefreshTokens
+            .Where(x => x.UserId == userId && x.RevokedAt == null)
+            .ToListAsync();
+
+        if (tokens.Count == 0) return;
+
+        var now = DateTime.UtcNow;
+        foreach (var token in tokens)
+        {
+            token.RevokedAt = now;
+        }
+
         await _db.SaveChangesAsync();
     }
 

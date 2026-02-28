@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using LMS_Backend.Models.DTOs.User;
 using LMS_Backend.Models.Entities;
+using LMS_Backend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -13,10 +14,17 @@ namespace LMS_Backend.Controllers;
 public class UsersController : ControllerBase
 {
     private readonly UserManager<User> _userManager;
+    private readonly SignInManager<User> _signInManager;
+    private readonly TokenService _tokenService;
 
-    public UsersController(UserManager<User> userManager)
+    public UsersController(
+        UserManager<User> userManager,
+        SignInManager<User> signInManager,
+        TokenService tokenService)
     {
         _userManager = userManager;
+        _signInManager = signInManager;
+        _tokenService = tokenService;
     }
 
     [HttpGet("me")]
@@ -54,6 +62,41 @@ public class UsersController : ControllerBase
         // Reload to ensure we return latest values (optional but nice)
         var updated = await _userManager.FindByIdAsync(user.Id);
         return Ok(ToProfileDto(updated!));
+    }
+
+    [HttpPost("me/change-password")]
+    [Authorize]
+    public async Task<IActionResult> ChangeMyPassword([FromBody] ChangePasswordRequest req)
+    {
+        if (!ModelState.IsValid) return ValidationProblem(ModelState);
+
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(userId)) return Unauthorized();
+
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user is null) return Unauthorized();
+
+        // require Active users only
+        if (user.Status != UserStatus.Active)
+            return Forbid();
+
+        // Secure: checks current password + applies password policy + rehash if needed
+        var result = await _userManager.ChangePasswordAsync(user, req.CurrentPassword, req.NewPassword);
+
+        if (!result.Succeeded)
+        {
+            return BadRequest(new
+            {
+                message = "Password change failed.",
+                errors = result.Errors.Select(e => new { e.Code, e.Description })
+            });
+        }
+
+        await _userManager.UpdateSecurityStampAsync(user);
+        await _tokenService.RevokeAllRefreshTokensForUserAsync(user.Id);
+        await _signInManager.RefreshSignInAsync(user);
+
+        return NoContent();
     }
 
     private async Task<User?> GetCurrentUserAsync(CancellationToken ct)
