@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -7,10 +7,10 @@
     <RootNamespace>LMS_Backend</RootNamespace>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);1591</NoWarn>
-    <UserSecretsId>cf0087c5-39fe-4d3d-b68d-1aeb9ffc792c</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="MailKit" Version="4.15.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.3" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.3" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.3">
@@ -25,9 +25,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Remove="Tools/**/*.cs" />
-    <EmbeddedResource Remove="Tools/**/*.*" />
-    <None Remove="Tools/**/*.*" />
+    <!-- Exclude test project sources from the main web project compilation -->
+    <Compile Remove="LMS-Backend.Tests\**\*.cs" />
   </ItemGroup>
 
 </Project>
