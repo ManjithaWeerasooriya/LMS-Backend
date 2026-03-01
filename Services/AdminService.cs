@@ -190,6 +190,68 @@ public class AdminService
         }
     }
 
+    public async Task ApproveTeacherAsync(string userId)
+    {
+        var targetUser = await GetPendingTeacherAsync(userId);
+        targetUser.Status = UserStatus.Active;
+        await PersistStatusChangeAsync(targetUser, $"approve teacher '{targetUser.Email}'");
+
+        var actingAdminId = GetCurrentUserId();
+        if (!string.IsNullOrWhiteSpace(actingAdminId))
+        {
+            _logger.LogInformation("Admin {AdminId} approved teacher {TeacherId}.", actingAdminId, targetUser.Id);
+        }
+    }
+
+    public async Task RejectTeacherAsync(string userId)
+    {
+        var targetUser = await GetPendingTeacherAsync(userId);
+        targetUser.Status = UserStatus.Suspended;
+        await PersistStatusChangeAsync(targetUser, $"reject teacher '{targetUser.Email}'");
+
+        var actingAdminId = GetCurrentUserId();
+        if (!string.IsNullOrWhiteSpace(actingAdminId))
+        {
+            _logger.LogInformation("Admin {AdminId} rejected teacher {TeacherId}.", actingAdminId, targetUser.Id);
+        }
+    }
+
+    private async Task<User> GetPendingTeacherAsync(string userId)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new ArgumentException("User id is required.", nameof(userId));
+        }
+
+        var targetUser = await _userManager.FindByIdAsync(userId);
+        if (targetUser == null)
+        {
+            throw new NotFoundException($"User '{userId}' was not found.");
+        }
+
+        if (!await _userManager.IsInRoleAsync(targetUser, "Teacher"))
+        {
+            throw new InvalidOperationException("Only teacher accounts can be approved or rejected.");
+        }
+
+        if (targetUser.Status != UserStatus.Pending)
+        {
+            throw new InvalidOperationException("Teacher must be in pending status to approve or reject.");
+        }
+
+        return targetUser;
+    }
+
+    private async Task PersistStatusChangeAsync(User user, string actionDescription)
+    {
+        var result = await _userManager.UpdateAsync(user);
+        if (!result.Succeeded)
+        {
+            var errors = string.Join(", ", result.Errors.Select(e => e.Description));
+            throw new InvalidOperationException($"Failed to {actionDescription}: {errors}");
+        }
+    }
+
     private string? GetCurrentUserId()
     {
         return _httpContextAccessor.HttpContext?.User?.FindFirstValue(ClaimTypes.NameIdentifier);

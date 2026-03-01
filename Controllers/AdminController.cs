@@ -86,4 +86,46 @@ public class AdminController : ControllerBase
             return BadRequest(new { message = ex.Message });
         }
     }
+
+    /// <summary>
+    /// Approves a pending teacher (Admin only).
+    /// </summary>
+    [HttpPatch("users/{id}/approve")]
+    public async Task<IActionResult> ApproveTeacher(string id)
+    {
+        try
+        {
+            await _adminService.ApproveTeacherAsync(id);
+            return NoContent();
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Rejects a pending teacher (Admin only).
+    /// </summary>
+    [HttpPatch("users/{id}/reject")]
+    public async Task<IActionResult> RejectTeacher(string id)
+    {
+        try
+        {
+            await _adminService.RejectTeacherAsync(id);
+            return NoContent();
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
 }
