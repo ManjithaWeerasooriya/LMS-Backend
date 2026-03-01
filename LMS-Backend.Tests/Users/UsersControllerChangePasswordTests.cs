@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Moq;
 
 namespace LMS_Backend.Tests.Users;
@@ -23,6 +24,8 @@ public class UsersControllerChangePasswordTests
     private readonly Mock<SignInManager<User>> _signInManagerMock;
     private readonly TokenService _tokenService;
     private readonly ApplicationDBContext _dbContext;
+    private readonly Mock<IEmailSender> _emailSenderMock;
+    private readonly Mock<ILogger<UsersController>> _loggerMock;
 
     public UsersControllerChangePasswordTests()
     {
@@ -55,6 +58,8 @@ public class UsersControllerChangePasswordTests
 
         _dbContext = new ApplicationDBContext(options);
         _tokenService = new TokenService(configuration, _userManagerMock.Object, _dbContext);
+        _emailSenderMock = new Mock<IEmailSender>();
+        _loggerMock = new Mock<ILogger<UsersController>>();
     }
 
     private UsersController CreateController(ClaimsPrincipal? userPrincipal)
@@ -62,7 +67,9 @@ public class UsersControllerChangePasswordTests
         var controller = new UsersController(
             _userManagerMock.Object,
             _signInManagerMock.Object,
-            _tokenService);
+            _tokenService,
+            _emailSenderMock.Object,
+            _loggerMock.Object);
 
         var httpContext = new DefaultHttpContext();
         if (userPrincipal != null)

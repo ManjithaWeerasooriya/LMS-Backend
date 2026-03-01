@@ -8,6 +8,7 @@ using LMS_Backend.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Moq;
 
 namespace LMS_Backend.Tests.Users;
@@ -16,6 +17,8 @@ public class UsersControllerUpdateMeTests
 {
     private readonly Mock<UserManager<User>> _userManagerMock;
     private readonly Mock<SignInManager<User>> _signInManagerMock;
+    private readonly Mock<IEmailSender> _emailSenderMock;
+    private readonly Mock<ILogger<UsersController>> _loggerMock;
 
     public UsersControllerUpdateMeTests()
     {
@@ -28,6 +31,9 @@ public class UsersControllerUpdateMeTests
             Mock.Of<IHttpContextAccessor>(),
             Mock.Of<IUserClaimsPrincipalFactory<User>>(),
             null!, null!, null!, null!);
+
+        _emailSenderMock = new Mock<IEmailSender>();
+        _loggerMock = new Mock<ILogger<UsersController>>();
     }
 
     private UsersController CreateControllerWithUser(User? user)
@@ -35,7 +41,9 @@ public class UsersControllerUpdateMeTests
         var controller = new UsersController(
             _userManagerMock.Object,
             _signInManagerMock.Object,
-            null!);
+            null!,
+            _emailSenderMock.Object,
+            _loggerMock.Object);
 
         var httpContext = new DefaultHttpContext();
 

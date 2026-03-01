@@ -12,6 +12,9 @@ namespace LMS_Backend.Controllers;
 [Route("api/v1/[controller]")]
 public class AuthController : ControllerBase
 {
+    private const string PasswordResetResponseMessage =
+        "If an account with this email exists, a password reset link has been sent.";
+
     private readonly UserManager<User> _userManager;
     private readonly RoleManager<IdentityRole> _roleManager;
     private readonly SignInManager<User> _signInManager;
@@ -247,5 +250,99 @@ public class AuthController : ControllerBase
         await _emailSender.SendEmailAsync(user.Email!, "Verify your email", $"<p><a href=\"{verifyUrl}\">Verify Email</a></p>");
 
         return Ok(new { message = "Verification email sent." });
+    }
+
+    [HttpPost("forgot-password")]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
+    {
+        if (!ModelState.IsValid)
+        {
+            return ValidationProblem(ModelState);
+        }
+
+        var email = request.Email.Trim();
+        var user = await _userManager.FindByEmailAsync(email);
+
+        if (user is not null && user.EmailConfirmed)
+        {
+            var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+            var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
+            var resetUrl = BuildResetPasswordUrl(user.Id, encodedToken);
+
+            var htmlBody = $"""
+                <p>Hi {user.FirstName ?? "there"},</p>
+                <p>We received a request to reset your password. If you made this request, click the link below (or paste it into your browser) to choose a new password.</p>
+                <p><a href="{resetUrl}">Reset my password</a></p>
+                <p>If you did not request a password reset, you can safely ignore this email.</p>
+                """;
+
+            await _emailSender.SendEmailAsync(user.Email!, "Reset your LMS password", htmlBody);
+        }
+
+        // Always return the same message to prevent account enumeration.
+        return Ok(new { message = PasswordResetResponseMessage });
+    }
+
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
+    {
+        if (!ModelState.IsValid)
+        {
+            return ValidationProblem(ModelState);
+        }
+
+        if (!string.Equals(request.NewPassword, request.ConfirmPassword, StringComparison.Ordinal))
+        {
+            return BadRequest(new { message = "NewPassword and ConfirmPassword must match." });
+        }
+
+        var user = await _userManager.FindByIdAsync(request.UserId);
+        if (user is null)
+        {
+            return BadRequest(new { message = "Invalid password reset token or user." });
+        }
+
+        string decodedToken;
+        try
+        {
+            decodedToken = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(request.Token));
+        }
+        catch (FormatException)
+        {
+            return BadRequest(new { message = "Invalid password reset token." });
+        }
+
+        var resetResult = await _userManager.ResetPasswordAsync(user, decodedToken, request.NewPassword);
+        if (!resetResult.Succeeded)
+        {
+            return BadRequest(new
+            {
+                message = "Password reset failed.",
+                errors = resetResult.Errors.Select(e => e.Description)
+            });
+        }
+
+        await _userManager.UpdateSecurityStampAsync(user);
+        await _tokenService.RevokeAllRefreshTokensForUserAsync(user.Id);
+
+        return Ok(new { message = "Password has been reset successfully. You can now sign in with the new password." });
+    }
+
+    private string BuildResetPasswordUrl(string userId, string encodedToken)
+    {
+        var url = Url.Action(
+            action: "ResetPassword",
+            controller: "Auth",
+            values: new { userId, token = encodedToken },
+            protocol: Request.Scheme);
+
+        if (!string.IsNullOrWhiteSpace(url))
+        {
+            return url;
+        }
+
+        var host = Request.Host.HasValue ? Request.Host.Value : "localhost";
+        var scheme = string.IsNullOrEmpty(Request.Scheme) ? "https" : Request.Scheme;
+        return $"{scheme}://{host}/reset-password?userId={Uri.EscapeDataString(userId)}&token={encodedToken}";
     }
 }

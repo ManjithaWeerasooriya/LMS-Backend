@@ -13,13 +13,18 @@ Backend services for the LMS project built with ASP.NET Core and Entity Framewor
 - **Run the API**: `dotnet run --project LMS-Backend.csproj` (optionally add `--launch-profile "https"`). Regardless of environment, the app expects `ConnectionStrings:DefaultConnection`; provide different values per environment via `.env`, `.env.Production`, or environment variables named `ConnectionStrings__DefaultConnection`.
 - **Smoke-test DB connectivity**: `dotnet run --project LMS-Backend.csproj -- --testconnection` loads the configured connection string for the current environment, attempts to connect once, then exits (non-zero exit code on failure). Use this before deployments to ensure the app can reach Azure SQL.
 - **Hot reload (optional)**: `dotnet watch --project LMS-Backend.csproj` for rapid iteration during development.
-- **Test**: once a test project exists, execute `dotnet test`. If you add multiple test projects (for example `LMS-Backend.Tests`), running the command from the solution root will discover them automatically. At present the repo does not include automated tests yet, so this command will simply report “No test projects found.”
+- **Test**: `dotnet test LMS-Backend.Tests/LMS-Backend.Tests.csproj` runs all xUnit suites. From the repository root you can also run `dotnet test` to execute every test project in the solution. To target a single test or namespace, append `--filter "<expression>"` (e.g., `--filter "FullyQualifiedName~Users"`). For coverage reports, use `dotnet test LMS-Backend.Tests/LMS-Backend.Tests.csproj --collect:"XPlat Code Coverage"` and inspect the `TestResults/<timestamp>/coverage.cobertura.xml` file.
 
 ### Change Environment Profile
 - `dotnet run` without flags loads the profile named `http` from `Properties/launchSettings.json`, which sets `ASPNETCORE_ENVIRONMENT=Development`. Use this for local Docker + dev DB testing.
 - To run against another environment temporarily, export both `DOTNET_ENVIRONMENT` and `ASPNETCORE_ENVIRONMENT` before launching and bypass launch settings so their values win, e.g. `DOTNET_ENVIRONMENT=Production ASPNETCORE_ENVIRONMENT=Production dotnet run --no-launch-profile --urls http://localhost:5251`.
 - To keep using launch profiles, duplicate one of the existing entries in `Properties/launchSettings.json`, rename it (for example `Production`), set `ASPNETCORE_ENVIRONMENT` accordingly, and then run `dotnet run --launch-profile Production` (or choose it via Visual Studio/Rider UI). Any profile-specific URLs you configure there will be honored.
 - Remember that whichever profile/environment you pick must still provide `ConnectionStrings__DefaultConnection` (through `.env`, secrets manager, or platform settings) so the app can reach the correct database.
+
+### Password Reset Flow
+- `POST /api/v1/auth/forgot-password` accepts `{ "email": "user@example.com" }` and always returns `{ "message": "If an account with this email exists, a password reset link has been sent." }`. Behind the scenes, the API only generates a token and sends email when the address exists and is confirmed, but the consistent response prevents account enumeration.
+- The email contains a URL-safe token plus the `userId`; clients should direct users to a UI that calls `POST /api/v1/auth/reset-password` with `{ "userId": "...", "token": "...", "newPassword": "NewPassword123!", "confirmPassword": "NewPassword123!" }`.
+- `POST /api/v1/auth/reset-password` validates the token (single-use, time-limited by Identity) and password confirmation, revokes existing refresh tokens, and returns `{ "message": "Password has been reset successfully. You can now sign in with the new password." }`. Invalid or expired tokens yield `400` with a descriptive error payload.
 
 ## SQL Server via Docker
 1. Pull the official SQL Server image once:
