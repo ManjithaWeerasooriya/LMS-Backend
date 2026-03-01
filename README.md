@@ -10,16 +10,23 @@ Backend services for the LMS project built with ASP.NET Core and Entity Framewor
 ## Build, Run, and Test
 - **Restore dependencies**: `dotnet restore` from the repo root the first time you clone or when packages change.
 - **Build**: `dotnet build` (adds `--configuration Release` when producing artifacts). This validates the code compiles against the configured target framework.
-- **Run the API**: `dotnet run --project LMS-Backend.csproj` (optionally add `--launch-profile "https"`). The command will use the connection string from `appsettings.Development.json` or any `ConnectionStrings__DefaultConnection` environment variable override.
+- **Run the API**: `dotnet run --project LMS-Backend.csproj` (optionally add `--launch-profile "https"`). Regardless of environment, the app expects `ConnectionStrings:DefaultConnection`; provide different values per environment via `.env`, `.env.Production`, or environment variables named `ConnectionStrings__DefaultConnection`.
+- **Smoke-test DB connectivity**: `dotnet run --project LMS-Backend.csproj -- --testconnection` loads the configured connection string for the current environment, attempts to connect once, then exits (non-zero exit code on failure). Use this before deployments to ensure the app can reach Azure SQL.
 - **Hot reload (optional)**: `dotnet watch --project LMS-Backend.csproj` for rapid iteration during development.
 - **Test**: once a test project exists, execute `dotnet test`. If you add multiple test projects (for example `LMS-Backend.Tests`), running the command from the solution root will discover them automatically. At present the repo does not include automated tests yet, so this command will simply report “No test projects found.”
+
+### Change Environment Profile
+- `dotnet run` without flags loads the profile named `http` from `Properties/launchSettings.json`, which sets `ASPNETCORE_ENVIRONMENT=Development`. Use this for local Docker + dev DB testing.
+- To run against another environment temporarily, export both `DOTNET_ENVIRONMENT` and `ASPNETCORE_ENVIRONMENT` before launching and bypass launch settings so their values win, e.g. `DOTNET_ENVIRONMENT=Production ASPNETCORE_ENVIRONMENT=Production dotnet run --no-launch-profile --urls http://localhost:5251`.
+- To keep using launch profiles, duplicate one of the existing entries in `Properties/launchSettings.json`, rename it (for example `Production`), set `ASPNETCORE_ENVIRONMENT` accordingly, and then run `dotnet run --launch-profile Production` (or choose it via Visual Studio/Rider UI). Any profile-specific URLs you configure there will be honored.
+- Remember that whichever profile/environment you pick must still provide `ConnectionStrings__DefaultConnection` (through `.env`, secrets manager, or platform settings) so the app can reach the correct database.
 
 ## SQL Server via Docker
 1. Pull the official SQL Server image once:
    ```bash
    docker pull mcr.microsoft.com/mssql/server:2022-latest
    ```
-2. Start a container (matching the existing `DefaultConnection` credentials) and expose port `1433`:
+2. Start a container (matching the existing `ConnectionStrings:DefaultConnection` development credentials) and expose port `1433`:
    ```bash
    docker run -e "ACCEPT_EULA=Y" \
               -e "SA_PASSWORD=StrongPass!123" \
@@ -40,7 +47,7 @@ If you ever need to stop or remove the instance: `docker stop lms-sql` and `dock
    dotnet ef migrations add <MigrationName>
    ```
    Replace `<MigrationName>` with any descriptive name, e.g. `UpdateEnrollmentSchema`. EF will create files under `Migrations/` (or the configured folder).
-4. **Apply the migration to the database** targeted by `DefaultConnection`:
+4. **Apply the migration to the database** targeted by `ConnectionStrings:DefaultConnection` (ensure your `.env`/environment variables point to the intended server first):
    ```bash
    dotnet ef database update
    ```
