@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [ "dev", "main" ]
+  pull_request:
+    branches: [ "dev", "main" ]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+
+    env:
+      DOTNET_VERSION: "10.0.x"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+            **/packages.lock.json
+
+      - name: Restore
+        run: dotnet restore LMS-Backend.sln
+
+      - name: Build
+        run: dotnet build LMS-Backend.sln --no-restore -c Release
+
+      - name: Test
+        run: dotnet test LMS-Backend.sln --no-build -c Release
