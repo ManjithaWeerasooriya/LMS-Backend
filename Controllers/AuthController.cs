@@ -184,13 +184,12 @@ public class AuthController : ControllerBase
 
     private IActionResult? BuildForbiddenResult(UserStatus status)
     {
-        return status switch
+        if (status == UserStatus.Suspended)
         {
-            UserStatus.Suspended => StatusCode(StatusCodes.Status403Forbidden,
-                new { message = "User account is suspended." }),
-            UserStatus.Deactivated => StatusCode(StatusCodes.Status403Forbidden,
-                new { message = "User account is deactivated." }),
-            _ => null
-        };
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new { message = "User account is suspended." });
+        }
+
+        return null;
     }
 }

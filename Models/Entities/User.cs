@@ -5,8 +5,8 @@ namespace LMS_Backend.Models.Entities;
 public enum UserStatus
 {
     Active = 1,
-    Suspended = 2,
-    Deactivated = 3
+    Pending = 2,
+    Suspended = 3
 }
 
 public class User: IdentityUser
