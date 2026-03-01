@@ -26,22 +26,39 @@ public class TokenService
 
     public async Task<(string accessToken, int expiresInSeconds)> CreateAccessTokenAsync(User user)
     {
+        var roles = await _userManager.GetRolesAsync(user);
+        var primaryRole = roles.FirstOrDefault() ?? "Student";
+        var email = user.Email ?? string.Empty;
+        var username = user.UserName ?? email;
+        var claims = BuildStandardClaims(user.Id, email, username, primaryRole, user.Status);
+        return CreateTokenFromClaims(claims);
+    }
+
+    public (string accessToken, int expiresInSeconds) CreateBootstrapAdminToken(string userId, string email, string username, UserStatus status, string role = "Admin")
+    {
+        var resolvedRole = string.IsNullOrWhiteSpace(role) ? "Admin" : role;
+        var claims = BuildStandardClaims(userId, email, username, resolvedRole, status);
+        return CreateTokenFromClaims(claims);
+    }
+
+    private static List<Claim> BuildStandardClaims(string subject, string email, string username, string role, UserStatus status)
+    {
+        var resolvedUsername = string.IsNullOrWhiteSpace(username) ? email : username;
+        return new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Sub, subject),
+            new(JwtRegisteredClaimNames.Email, email),
+            new(ClaimTypes.Name, resolvedUsername),
+            new(ClaimTypes.Role, role),
+            new("status", status.ToString())
+        };
+    }
+
+    private (string accessToken, int expiresInSeconds) CreateTokenFromClaims(IEnumerable<Claim> claims)
+    {
         var jwt = _config.GetSection("Jwt");
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt["Key"]!));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-
-        var roles = await _userManager.GetRolesAsync(user);
-        var primaryRole = roles.FirstOrDefault() ?? "Student";
-
-        var claims = new List<Claim>
-        {
-            new(JwtRegisteredClaimNames.Sub, user.Id),
-            new(JwtRegisteredClaimNames.Email, user.Email ?? ""),
-            new(ClaimTypes.Name, user.UserName ?? user.Email ?? ""),
-            new(ClaimTypes.Role, primaryRole),
-            new("status", user.Status.ToString())
-        };
-
         var minutes = int.Parse(jwt["AccessTokenMinutes"]!);
         var expires = DateTime.UtcNow.AddMinutes(minutes);
 
