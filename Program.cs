@@ -2,8 +2,8 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
 using LMS_Backend.Data;
+using LMS_Backend.Infrastructure.Seed;
 using LMS_Backend.Models.Entities;
-using LMS_Backend.Models.Options;
 using LMS_Backend.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
@@ -55,7 +55,6 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddAuthorization();
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<AdminService>();
-builder.Services.Configure<BootstrapAdminOptions>(builder.Configuration.GetSection("BootstrapAdmin"));
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -101,6 +100,11 @@ var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
 {
+    using var scope = app.Services.CreateScope();
+    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+    await IdentitySeeder.SeedAsync(userManager, roleManager);
+
     app.UseSwagger();
     app.UseSwaggerUI();
 }

@@ -1,10 +1,8 @@
 using LMS_Backend.Models.DTOs.Auth;
 using LMS_Backend.Models.Entities;
 using LMS_Backend.Services;
-using LMS_Backend.Models.Options;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
 
 namespace LMS_Backend.Controllers;
 
@@ -16,23 +14,17 @@ public class AuthController : ControllerBase
     private readonly RoleManager<IdentityRole> _roleManager;
     private readonly SignInManager<User> _signInManager;
     private readonly TokenService _tokenService;
-    private readonly BootstrapAdminOptions _bootstrapAdminOptions;
-    private readonly IPasswordHasher<User> _passwordHasher;
 
     public AuthController(
         UserManager<User> userManager,
         RoleManager<IdentityRole> roleManager,
         SignInManager<User> signInManager,
-        TokenService tokenService,
-        IOptions<BootstrapAdminOptions> bootstrapAdminOptions,
-        IPasswordHasher<User> passwordHasher)
+        TokenService tokenService)
     {
         _userManager = userManager;
         _roleManager = roleManager;
         _signInManager = signInManager;
         _tokenService = tokenService;
-        _bootstrapAdminOptions = bootstrapAdminOptions.Value ?? new BootstrapAdminOptions();
-        _passwordHasher = passwordHasher;
     }
 
     [HttpPost("register")]
@@ -100,11 +92,6 @@ public class AuthController : ControllerBase
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest req)
     {
-        if (TryHandleBootstrapAdminLogin(req, out var bootstrapResult))
-        {
-            return bootstrapResult!;
-        }
-
         var user = await _userManager.FindByEmailAsync(req.Email);
         if (user == null)
             return Unauthorized(new { message = "Invalid credentials." });
@@ -186,59 +173,4 @@ public class AuthController : ControllerBase
         return Ok(new { message = "Logged out." });
     }
 
-    private bool TryHandleBootstrapAdminLogin(LoginRequest req, out IActionResult? result)
-    {
-        result = null;
-        if (!_bootstrapAdminOptions.Enabled ||
-            string.IsNullOrWhiteSpace(_bootstrapAdminOptions.Email) ||
-            string.IsNullOrWhiteSpace(_bootstrapAdminOptions.PasswordHash))
-        {
-            return false;
-        }
-
-        if (!string.Equals(req.Email, _bootstrapAdminOptions.Email, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        var pseudoUser = new User
-        {
-            Id = string.IsNullOrWhiteSpace(_bootstrapAdminOptions.UserId)
-                ? "bootstrap-admin"
-                : _bootstrapAdminOptions.UserId,
-            Email = _bootstrapAdminOptions.Email,
-            UserName = _bootstrapAdminOptions.Email,
-            Status = UserStatus.Active
-        };
-
-        var verification = _passwordHasher.VerifyHashedPassword(pseudoUser, _bootstrapAdminOptions.PasswordHash, req.Password);
-        if (verification == PasswordVerificationResult.Failed)
-        {
-            result = Unauthorized(new { message = "Invalid credentials." });
-            return true;
-        }
-
-        var (accessToken, expiresIn) = _tokenService.CreateBootstrapAdminToken(
-            pseudoUser.Id,
-            pseudoUser.Email ?? string.Empty,
-            pseudoUser.UserName ?? pseudoUser.Email ?? string.Empty,
-            pseudoUser.Status);
-
-        result = Ok(new
-        {
-            accessToken,
-            refreshToken = (string?)null,
-            expiresIn,
-            tokenType = "Bearer",
-            user = new
-            {
-                id = pseudoUser.Id,
-                email = pseudoUser.Email,
-                username = pseudoUser.UserName,
-                role = "Admin"
-            }
-        });
-
-        return true;
-    }
 }
