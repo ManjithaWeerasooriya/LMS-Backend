@@ -5,8 +5,8 @@ namespace LMS_Backend.Models.Entities;
 public enum UserStatus
 {
     Active = 1,
-    Pending = 2,
-    Suspended = 3
+    Suspended = 2,
+    Deactivated = 3
 }
 
 public class User: IdentityUser
@@ -19,4 +19,3 @@ public class User: IdentityUser
     public DateTime? LastLoginAt { get; set; }
 
 }
-

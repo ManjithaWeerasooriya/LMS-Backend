@@ -1,8 +1,12 @@
+using System.Security.Claims;
 using LMS_Backend.Data;
 using LMS_Backend.Models.DTOs.Admin;
 using LMS_Backend.Models.Entities;
+using LMS_Backend.Models.Exceptions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace LMS_Backend.Services;
 
@@ -10,11 +14,19 @@ public class AdminService
 {
     private readonly ApplicationDBContext _dbContext;
     private readonly UserManager<User> _userManager;
+    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly ILogger<AdminService> _logger;
 
-    public AdminService(ApplicationDBContext dbContext, UserManager<User> userManager)
+    public AdminService(
+        ApplicationDBContext dbContext,
+        UserManager<User> userManager,
+        IHttpContextAccessor httpContextAccessor,
+        ILogger<AdminService> logger)
     {
         _dbContext = dbContext;
         _userManager = userManager;
+        _httpContextAccessor = httpContextAccessor;
+        _logger = logger;
     }
 
     /// <summary>
@@ -97,5 +109,89 @@ public class AdminService
             PageSize = pageSize,
             Users = userDtos
         };
+    }
+
+    public async Task SuspendUserAsync(string userId, string? reason = null)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new ArgumentException("User id is required.", nameof(userId));
+        }
+
+        var targetUser = await _userManager.FindByIdAsync(userId);
+        if (targetUser == null)
+        {
+            throw new NotFoundException($"User '{userId}' was not found.");
+        }
+
+        var actingAdminId = GetCurrentUserId();
+        if (string.IsNullOrWhiteSpace(actingAdminId))
+        {
+            throw new InvalidOperationException("Unable to determine the acting administrator.");
+        }
+
+        if (targetUser.Id == actingAdminId)
+        {
+            throw new InvalidOperationException("Administrators cannot suspend their own accounts.");
+        }
+
+        if (await _userManager.IsInRoleAsync(targetUser, "Admin"))
+        {
+            throw new InvalidOperationException("Administrators cannot suspend other administrators.");
+        }
+
+        if (targetUser.Status == UserStatus.Suspended)
+        {
+            _logger.LogInformation("Admin {AdminId} attempted to suspend user {UserId} who is already suspended.", actingAdminId, targetUser.Id);
+            return;
+        }
+
+        targetUser.Status = UserStatus.Suspended;
+        var result = await _userManager.UpdateAsync(targetUser);
+        if (!result.Succeeded)
+        {
+            var errors = string.Join(", ", result.Errors.Select(e => e.Description));
+            throw new InvalidOperationException($"Failed to suspend user '{targetUser.Email}': {errors}");
+        }
+
+        _logger.LogInformation("Admin {AdminId} suspended user {UserId}. Reason: {Reason}", actingAdminId, targetUser.Id, reason ?? "n/a");
+    }
+
+    public async Task ReactivateUserAsync(string userId)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new ArgumentException("User id is required.", nameof(userId));
+        }
+
+        var targetUser = await _userManager.FindByIdAsync(userId);
+        if (targetUser == null)
+        {
+            throw new NotFoundException($"User '{userId}' was not found.");
+        }
+
+        if (targetUser.Status == UserStatus.Active)
+        {
+            return;
+        }
+
+        targetUser.Status = UserStatus.Active;
+        var result = await _userManager.UpdateAsync(targetUser);
+        if (!result.Succeeded)
+        {
+            var errors = string.Join(", ", result.Errors.Select(e => e.Description));
+            throw new InvalidOperationException($"Failed to reactivate user '{targetUser.Email}': {errors}");
+        }
+
+        var actingAdminId = GetCurrentUserId();
+        if (!string.IsNullOrWhiteSpace(actingAdminId))
+        {
+            _logger.LogInformation("Admin {AdminId} reactivated user {UserId}.", actingAdminId, targetUser.Id);
+        }
+    }
+
+    private string? GetCurrentUserId()
+    {
+        return _httpContextAccessor.HttpContext?.User?.FindFirstValue(ClaimTypes.NameIdentifier);
     }
 }

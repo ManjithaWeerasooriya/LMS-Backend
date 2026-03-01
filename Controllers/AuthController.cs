@@ -1,6 +1,7 @@
 using LMS_Backend.Models.DTOs.Auth;
 using LMS_Backend.Models.Entities;
 using LMS_Backend.Services;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 
@@ -52,7 +53,7 @@ public class AuthController : ControllerBase
             Email = req.Email,
             FirstName = req.FirstName,
             LastName = req.LastName,
-            Status = isTeacher ? UserStatus.Pending : UserStatus.Active,
+            Status = UserStatus.Active,
             Phone = null,
             CreatedAt = DateTime.UtcNow
         };
@@ -72,11 +73,10 @@ public class AuthController : ControllerBase
         if (!await _roleManager.RoleExistsAsync(normalizedRole))
             await _roleManager.CreateAsync(new IdentityRole(normalizedRole));
 
-        if (isStudent)
+        if (isStudent || isTeacher)
         {
             await _userManager.AddToRoleAsync(user, normalizedRole);
         }
-        // Teachers keep Status = Pending and will receive the Teacher role during admin approval.
 
         return Ok(new
         {
@@ -96,12 +96,15 @@ public class AuthController : ControllerBase
         if (user == null)
             return Unauthorized(new { message = "Invalid credentials." });
 
-        if (user.Status != UserStatus.Active)
-            return Unauthorized(new { message = $"User is {user.Status}." });
-
         var result = await _signInManager.CheckPasswordSignInAsync(user, req.Password, lockoutOnFailure: true);
         if (!result.Succeeded)
             return Unauthorized(new { message = "Invalid credentials." });
+
+        var statusResult = BuildForbiddenResult(user.Status);
+        if (statusResult != null)
+        {
+            return statusResult;
+        }
 
         user.LastLoginAt = DateTime.UtcNow;
         await _userManager.UpdateAsync(user);
@@ -137,8 +140,14 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> Refresh([FromBody] RefreshRequest req)
     {
         var user = await _tokenService.ValidateRefreshTokenAsync(req.RefreshToken, req.DeviceId);
-        if (user == null || user.Status != UserStatus.Active)
+        if (user == null)
             return Unauthorized(new { message = "Invalid refresh token." });
+
+        var statusResult = BuildForbiddenResult(user.Status);
+        if (statusResult != null)
+        {
+            return statusResult;
+        }
 
         var roles = await _userManager.GetRolesAsync(user);
         var role = roles.FirstOrDefault() ?? "Student";
@@ -173,4 +182,15 @@ public class AuthController : ControllerBase
         return Ok(new { message = "Logged out." });
     }
 
+    private IActionResult? BuildForbiddenResult(UserStatus status)
+    {
+        return status switch
+        {
+            UserStatus.Suspended => StatusCode(StatusCodes.Status403Forbidden,
+                new { message = "User account is suspended." }),
+            UserStatus.Deactivated => StatusCode(StatusCodes.Status403Forbidden,
+                new { message = "User account is deactivated." }),
+            _ => null
+        };
+    }
 }
