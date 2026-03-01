@@ -24,4 +24,9 @@
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.16.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Exclude test project sources from the main web project compilation -->
+    <Compile Remove="LMS-Backend.Tests\**\*.cs" />
+  </ItemGroup>
+
 </Project>
