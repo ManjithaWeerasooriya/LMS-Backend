@@ -21,6 +21,11 @@ Backend services for the LMS project built with ASP.NET Core and Entity Framewor
 - To keep using launch profiles, duplicate one of the existing entries in `Properties/launchSettings.json`, rename it (for example `Production`), set `ASPNETCORE_ENVIRONMENT` accordingly, and then run `dotnet run --launch-profile Production` (or choose it via Visual Studio/Rider UI). Any profile-specific URLs you configure there will be honored.
 - Remember that whichever profile/environment you pick must still provide `ConnectionStrings__DefaultConnection` (through `.env`, secrets manager, or platform settings) so the app can reach the correct database.
 
+### Password Reset Flow
+- `POST /api/v1/auth/forgot-password` accepts `{ "email": "user@example.com" }` and always returns `{ "message": "If an account with this email exists, a password reset link has been sent." }`. Behind the scenes, the API only generates a token and sends email when the address exists and is confirmed, but the consistent response prevents account enumeration.
+- The email contains a URL-safe token plus the `userId`; clients should direct users to a UI that calls `POST /api/v1/auth/reset-password` with `{ "userId": "...", "token": "...", "newPassword": "NewPassword123!", "confirmPassword": "NewPassword123!" }`.
+- `POST /api/v1/auth/reset-password` validates the token (single-use, time-limited by Identity) and password confirmation, revokes existing refresh tokens, and returns `{ "message": "Password has been reset successfully. You can now sign in with the new password." }`. Invalid or expired tokens yield `400` with a descriptive error payload.
+
 ## SQL Server via Docker
 1. Pull the official SQL Server image once:
    ```bash
