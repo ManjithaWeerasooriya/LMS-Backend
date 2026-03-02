@@ -1,0 +1,12 @@
+# Local environment overrides for sensitive values
+ConnectionStrings__DefaultConnection="Server=localhost,1433;Database=LMS;User Id=sa;Password=StrongPass!123;TrustServerCertificate=True;"
+Jwt__Key="OG0RYe_FNuwQme20r=dL{ZtUz@WF43i{P:W.6WA^.$W"
+Jwt__Issuer="LMS"
+Jwt__Audience="LMSClient"
+Jwt__AccessTokenMinutes="60"
+Jwt__RefreshTokenDays="7"
+Email__SmtpHost="smtp.gmail.com"
+Email__SmtpPort="587"
+Email__Username="waamanjitha@gmail.com"
+Email__Password="pgrv nuyh zygp lukd"
+Email__From="waamanjitha@gmail.com"

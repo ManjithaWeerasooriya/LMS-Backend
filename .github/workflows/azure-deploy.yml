@@ -1,0 +1,40 @@
+name: Deploy to Azure
+
+on:
+  push:
+    branches: [ "dev", "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      DOTNET_VERSION: "10.0.x"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore LMS-Backend.sln
+
+      - name: Build
+        run: dotnet build LMS-Backend.sln -c Release --no-restore
+
+      - name: Publish
+        run: dotnet publish LMS-Backend.csproj -c Release -o ./publish
+
+
+      # MAIN -> PRODUCTION
+      - name: Deploy to Azure Web App (Production)
+        if: github.ref == 'refs/heads/main'
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: lms-backend-deepana
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: ./publish
