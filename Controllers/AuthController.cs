@@ -72,11 +72,7 @@ public class AuthController : ControllerBase
         var createResult = await _userManager.CreateAsync(user, req.Password);
         if (!createResult.Succeeded)
         {
-            return BadRequest(new
-            {
-                message = "Registration failed.",
-                errors = createResult.Errors.Select(e => e.Description)
-            });
+            return BadRequest(createResult.Errors);
         }
 
         var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
@@ -107,11 +103,12 @@ public class AuthController : ControllerBase
         if (!await _roleManager.RoleExistsAsync(normalizedRole))
             await _roleManager.CreateAsync(new IdentityRole(normalizedRole));
 
-        if (isStudent)
+        var roleResult = await _userManager.AddToRoleAsync(user, normalizedRole);
+        if (!roleResult.Succeeded)
         {
-            await _userManager.AddToRoleAsync(user, normalizedRole);
+            await _userManager.DeleteAsync(user);
+            return BadRequest(roleResult.Errors);
         }
-        // Teachers keep Status = Pending and will receive the Teacher role during admin approval.
 
         return Ok(new
         {
