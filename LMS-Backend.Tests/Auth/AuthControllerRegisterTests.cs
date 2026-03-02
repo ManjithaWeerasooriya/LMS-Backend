@@ -46,17 +46,29 @@ public class AuthControllerRegisterTests
         _configurationMock = new Mock<IConfiguration>();
         _emailSenderMock = new Mock<IEmailSender>();
 
-        _emailSenderMock
-            .Setup(e => e.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
-            .Returns(Task.CompletedTask);
+        _userManagerMock
+            .Setup(m => m.CreateAsync(It.IsAny<User>(), It.IsAny<string>()))
+            .ReturnsAsync(IdentityResult.Success);
+
+        _userManagerMock
+            .Setup(m => m.GenerateEmailConfirmationTokenAsync(It.IsAny<User>()))
+            .ReturnsAsync("token");
 
         _userManagerMock
             .Setup(m => m.AddToRoleAsync(It.IsAny<User>(), It.IsAny<string>()))
             .ReturnsAsync(IdentityResult.Success);
 
         _roleManagerMock
+            .Setup(r => r.RoleExistsAsync(It.IsAny<string>()))
+            .ReturnsAsync(true);
+
+        _roleManagerMock
             .Setup(r => r.CreateAsync(It.IsAny<IdentityRole>()))
             .ReturnsAsync(IdentityResult.Success);
+
+        _emailSenderMock
+            .Setup(e => e.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .Returns(Task.CompletedTask);
 
         var inMemoryConfig = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
