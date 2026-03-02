@@ -1,33 +1,53 @@
-name: Deploy to Azure
+name: Deploy to Azure (Production)
 
 on:
   push:
-    branches: [ "dev", "main" ]
+    branches: [ "main" ]
+  workflow_dispatch:
 
 permissions:
   id-token: write
   contents: read
 
+concurrency:
+  group: azure-webapp-production
+  cancel-in-progress: true
+
 jobs:
   deploy:
+    name: Build & Deploy
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     env:
       DOTNET_VERSION: "10.0.x"
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-dotnet@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+            **/*.fsproj
+            **/*.vbproj
+            **/packages.lock.json
+            **/*.sln
 
-      - run: dotnet restore LMS-Backend.sln
-      - run: dotnet build LMS-Backend.sln -c Release --no-restore
-      - run: dotnet publish LMS-Backend.csproj -c Release -o ./publish
+      - name: Restore
+        run: dotnet restore LMS-Backend.sln
 
-      - name: Azure Login
-        if: github.ref == 'refs/heads/main'
+      - name: Build
+        run: dotnet build LMS-Backend.sln -c Release --no-restore
+
+      - name: Publish
+        run: dotnet publish LMS-Backend.csproj -c Release -o ./publish --no-build
+
+      - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -35,7 +55,6 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy to Azure Web App (Production)
-        if: github.ref == 'refs/heads/main'
         uses: azure/webapps-deploy@v3
         with:
           app-name: lms-backend-deepana
