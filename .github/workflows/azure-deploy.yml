@@ -29,15 +29,6 @@ jobs:
       - name: Publish
         run: dotnet publish LMS-Backend.csproj -c Release -o ./publish
 
-      # DEV -> STAGING SLOT
-      - name: Deploy to Azure Web App (Staging)
-        if: github.ref == 'refs/heads/dev'
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: lms-backend-deepana
-          slot-name: staging
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: ./publish
 
       # MAIN -> PRODUCTION
       - name: Deploy to Azure Web App (Production)
