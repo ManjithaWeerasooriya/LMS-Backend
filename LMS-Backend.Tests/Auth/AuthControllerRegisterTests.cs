@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using LMS_Backend.Controllers;
+using LMS_Backend.Data;
 using LMS_Backend.Models.DTOs.Auth;
 using LMS_Backend.Models.Entities;
 using LMS_Backend.Services;
@@ -9,6 +11,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Routing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Moq;
 
@@ -21,6 +24,8 @@ public class AuthControllerRegisterTests
     private readonly Mock<SignInManager<User>> _signInManagerMock;
     private readonly Mock<IConfiguration> _configurationMock;
     private readonly Mock<IEmailSender> _emailSenderMock;
+    private readonly TokenService _tokenService;
+    private readonly ApplicationDBContext _dbContext;
 
     public AuthControllerRegisterTests()
     {
@@ -40,6 +45,48 @@ public class AuthControllerRegisterTests
 
         _configurationMock = new Mock<IConfiguration>();
         _emailSenderMock = new Mock<IEmailSender>();
+
+        _userManagerMock
+            .Setup(m => m.CreateAsync(It.IsAny<User>(), It.IsAny<string>()))
+            .ReturnsAsync(IdentityResult.Success);
+
+        _userManagerMock
+            .Setup(m => m.GenerateEmailConfirmationTokenAsync(It.IsAny<User>()))
+            .ReturnsAsync("token");
+
+        _userManagerMock
+            .Setup(m => m.AddToRoleAsync(It.IsAny<User>(), It.IsAny<string>()))
+            .ReturnsAsync(IdentityResult.Success);
+
+        _roleManagerMock
+            .Setup(r => r.RoleExistsAsync(It.IsAny<string>()))
+            .ReturnsAsync(true);
+
+        _roleManagerMock
+            .Setup(r => r.CreateAsync(It.IsAny<IdentityRole>()))
+            .ReturnsAsync(IdentityResult.Success);
+
+        _emailSenderMock
+            .Setup(e => e.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .Returns(Task.CompletedTask);
+
+        var inMemoryConfig = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Jwt:Key"] = "UnitTestKey1234567890!",
+                ["Jwt:Issuer"] = "UnitTestIssuer",
+                ["Jwt:Audience"] = "UnitTestAudience",
+                ["Jwt:AccessTokenMinutes"] = "60",
+                ["Jwt:RefreshTokenDays"] = "7"
+            })
+            .Build();
+
+        var dbOptions = new DbContextOptionsBuilder<ApplicationDBContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        _dbContext = new ApplicationDBContext(dbOptions);
+        _tokenService = new TokenService(inMemoryConfig, _userManagerMock.Object, _dbContext);
     }
 
     private AuthController CreateController()
@@ -48,7 +95,7 @@ public class AuthControllerRegisterTests
             _userManagerMock.Object,
             _roleManagerMock.Object,
             _signInManagerMock.Object,
-            null!,
+            _tokenService,
             _configurationMock.Object,
             _emailSenderMock.Object);
 

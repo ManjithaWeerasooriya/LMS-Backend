@@ -19,4 +19,3 @@ public class User: IdentityUser
     public DateTime? LastLoginAt { get; set; }
 
 }
-
