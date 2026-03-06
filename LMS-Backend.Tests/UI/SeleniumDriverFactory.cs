@@ -21,7 +21,12 @@ public static class SeleniumDriverFactory
     private static IWebDriver CreateChromeDriver()
     {
         var options = new ChromeOptions();
-        options.AddArgument("--start-maximized");
+
+        options.AddArgument("--headless=new");
+        options.AddArgument("--no-sandbox");
+        options.AddArgument("--disable-dev-shm-usage");
+        options.AddArgument("--disable-gpu");
+        options.AddArgument("--window-size=1920,1080");
 
         return new ChromeDriver(options);
     }
@@ -29,7 +34,12 @@ public static class SeleniumDriverFactory
     private static IWebDriver CreateEdgeDriver()
     {
         var options = new EdgeOptions();
-        options.AddArgument("--start-maximized");
+
+        options.AddArgument("--headless=new");
+        options.AddArgument("--no-sandbox");
+        options.AddArgument("--disable-dev-shm-usage");
+        options.AddArgument("--disable-gpu");
+        options.AddArgument("--window-size=1920,1080");
 
         return new EdgeDriver(options);
     }
