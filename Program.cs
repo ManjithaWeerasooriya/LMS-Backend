@@ -25,11 +25,16 @@ var builder = WebApplication.CreateBuilder(filteredArgs);
 
 builder.Services.AddControllers();
 builder.Services.AddHttpContextAccessor();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:3000")
+        policy
+            .WithOrigins(
+                "http://localhost:3000",
+                "https://lms-f-a8cc9rdno-nirdeepanas-projects.vercel.app"
+            )
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
@@ -72,15 +77,12 @@ builder.Services.AddAuthentication(options =>
             ValidateAudience = true,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
-
             ValidIssuer = jwt["Issuer"],
             ValidAudience = jwt["Audience"],
             IssuerSigningKey = new SymmetricSecurityKey(keyBytes),
-
             ClockSkew = TimeSpan.FromSeconds(30)
         };
-    }
-);
+    });
 
 builder.Services.AddAuthorization();
 builder.Services.AddScoped<TokenService>();
@@ -149,10 +151,10 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.UseCors("AllowFrontend");
+
 app.UseAuthentication();
 app.UseAuthorization();
-
-app.UseCors("AllowFrontend");
 
 app.MapControllers();
 
