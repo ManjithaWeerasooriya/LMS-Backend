@@ -25,14 +25,18 @@ var builder = WebApplication.CreateBuilder(filteredArgs);
 
 builder.Services.AddControllers();
 builder.Services.AddHttpContextAccessor();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:3000")
+        policy
+            .WithOrigins(
+                "http://localhost:3000",
+                "https://lms-f-a8cc9rdno-nirdeepanas-projects.vercel.app"
+            )
             .AllowAnyHeader()
-            .AllowAnyMethod()
-            .AllowCredentials();
+            .AllowAnyMethod();
     });
 });
 
@@ -73,15 +77,12 @@ builder.Services.AddAuthentication(options =>
             ValidateAudience = true,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
-
             ValidIssuer = jwt["Issuer"],
             ValidAudience = jwt["Audience"],
             IssuerSigningKey = new SymmetricSecurityKey(keyBytes),
-
             ClockSkew = TimeSpan.FromSeconds(30)
         };
-    }
-);
+    });
 
 builder.Services.AddAuthorization();
 builder.Services.AddScoped<TokenService>();
@@ -135,14 +136,7 @@ if (testConnectionRequested)
     return;
 }
 
-try
-{
-    await ApplyPendingMigrationsAsync(app);
-}
-catch (Exception ex)
-{
-    app.Logger.LogError(ex, "Database migration failed at startup. App will continue running.");
-}
+await ApplyPendingMigrationsAsync(app);
 
 if (app.Environment.IsDevelopment())
 {
@@ -156,7 +150,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
 app.UseCors("AllowFrontend");
+
 app.UseAuthentication();
 app.UseAuthorization();
 
