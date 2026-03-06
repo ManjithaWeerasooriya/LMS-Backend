@@ -31,7 +31,8 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins("http://localhost:3000")
             .AllowAnyHeader()
-            .AllowAnyMethod();
+            .AllowAnyMethod()
+            .AllowCredentials();
     });
 });
 
@@ -134,7 +135,14 @@ if (testConnectionRequested)
     return;
 }
 
-await ApplyPendingMigrationsAsync(app);
+try
+{
+    await ApplyPendingMigrationsAsync(app);
+}
+catch (Exception ex)
+{
+    app.Logger.LogError(ex, "Database migration failed at startup. App will continue running.");
+}
 
 if (app.Environment.IsDevelopment())
 {
@@ -148,11 +156,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
+app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
-
-app.UseCors("AllowFrontend");
 
 app.MapControllers();
 
