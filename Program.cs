@@ -87,6 +87,10 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddAuthorization();
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<AdminService>();
+builder.Services.AddScoped<TeacherDashboardService>();
+builder.Services.AddScoped<CourseService>();
+builder.Services.AddScoped<QuizService>();
+builder.Services.AddScoped<LiveClassService>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
