@@ -19,6 +19,13 @@ public class CourseService
         CreateCourseRequestDto dto,
         CancellationToken cancellationToken)
     {
+        var status = CourseStatus.Active;
+        if (!string.IsNullOrWhiteSpace(dto.Status) &&
+            Enum.TryParse<CourseStatus>(dto.Status, true, out var parsedStatus))
+        {
+            status = parsedStatus;
+        }
+
         var course = new Course
         {
             TeacherId = teacherId,
@@ -30,7 +37,7 @@ public class CourseService
             MaxStudents = dto.MaxStudents,
             DifficultyLevel = dto.DifficultyLevel?.Trim(),
             Prerequisites = dto.Prerequisites?.Trim(),
-            Status = CourseStatus.Active,
+            Status = status,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -82,6 +89,32 @@ public class CourseService
             .FirstOrDefaultAsync(cancellationToken);
     }
 
+    public async Task<CourseDetailDto?> GetCourseDetailForTeacherAsync(
+        Guid id,
+        string teacherId,
+        CancellationToken cancellationToken)
+    {
+        var course = await _dbContext.Courses
+            .Where(c => c.Id == id && c.TeacherId == teacherId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (course == null) return null;
+
+        return new CourseDetailDto
+        {
+            Id = course.Id,
+            Title = course.Title,
+            Category = course.Category,
+            Description = course.Description,
+            DurationHours = course.DurationHours,
+            Price = course.Price,
+            MaxStudents = course.MaxStudents,
+            DifficultyLevel = course.DifficultyLevel,
+            Prerequisites = course.Prerequisites,
+            Status = course.Status.ToString()
+        };
+    }
+
     public async Task<bool> UpdateCourseAsync(
         Guid id,
         string teacherId,
@@ -99,6 +132,13 @@ public class CourseService
         course.MaxStudents = dto.MaxStudents;
         course.DifficultyLevel = dto.DifficultyLevel?.Trim();
         course.Prerequisites = dto.Prerequisites?.Trim();
+
+        if (!string.IsNullOrWhiteSpace(dto.Status) &&
+            Enum.TryParse<CourseStatus>(dto.Status, true, out var parsedStatus))
+        {
+            course.Status = parsedStatus;
+        }
+
         course.UpdatedAt = DateTime.UtcNow;
 
         await _dbContext.SaveChangesAsync(cancellationToken);

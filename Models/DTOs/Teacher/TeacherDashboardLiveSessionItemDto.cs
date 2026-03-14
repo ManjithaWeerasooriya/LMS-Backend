@@ -9,5 +9,6 @@ public class TeacherDashboardLiveSessionItemDto
     public DateTime ScheduledAt { get; set; }
     public string? CourseTitle { get; set; }
     public int StudentsEnrolled { get; set; }
+    public string? MeetingLink { get; set; }
 }
 

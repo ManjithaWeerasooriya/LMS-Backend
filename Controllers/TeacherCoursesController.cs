@@ -18,6 +18,26 @@ public class TeacherCoursesController : ControllerBase
         _courseService = courseService;
     }
 
+    [HttpGet("{id:guid}")]
+    public async Task<ActionResult<CourseDetailDto>> GetCourse(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        var teacherId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(teacherId))
+        {
+            return Unauthorized();
+        }
+
+        var course = await _courseService.GetCourseDetailForTeacherAsync(id, teacherId, cancellationToken);
+        if (course == null)
+        {
+            return NotFound();
+        }
+
+        return Ok(course);
+    }
+
     [HttpGet]
     public async Task<ActionResult<IEnumerable<CourseListItemDto>>> GetMyCourses(
         [FromQuery] string? search,

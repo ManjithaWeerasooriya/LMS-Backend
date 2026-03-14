@@ -9,5 +9,6 @@ public class LiveClassListItemDto
     public string? CourseTitle { get; set; }
     public DateTime ScheduledAt { get; set; }
     public int StudentsEnrolled { get; set; }
+    public string? MeetingLink { get; set; }
 }
 

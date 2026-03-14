@@ -84,7 +84,8 @@ public class TeacherDashboardService
                 CourseTitle = l.Course != null ? l.Course.Title : null,
                 StudentsEnrolled = l.Course != null
                     ? l.Course.Enrollments.Count
-                    : 0
+                    : 0,
+                MeetingLink = l.MeetingLink
             })
             .ToListAsync(cancellationToken);
 
