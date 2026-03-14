@@ -68,7 +68,8 @@ public class LiveClassService
                 ScheduledAt = l.ScheduledAt,
                 StudentsEnrolled = l.Course != null
                     ? l.Course.Enrollments.Count
-                    : 0
+                    : 0,
+                MeetingLink = l.MeetingLink
             })
             .ToListAsync(cancellationToken);
 

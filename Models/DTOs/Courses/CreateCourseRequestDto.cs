@@ -28,5 +28,12 @@ public class CreateCourseRequestDto
 
     [MaxLength(1000)]
     public string? Prerequisites { get; set; }
+
+    /// <summary>
+    /// Optional course status: "Draft", "Active", or "Archived".
+    /// If omitted, defaults are applied on the server.
+    /// </summary>
+    [MaxLength(20)]
+    public string? Status { get; set; }
 }
 
