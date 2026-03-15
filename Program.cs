@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 
@@ -91,6 +92,7 @@ builder.Services.AddScoped<TeacherDashboardService>();
 builder.Services.AddScoped<CourseService>();
 builder.Services.AddScoped<QuizService>();
 builder.Services.AddScoped<LiveClassService>();
+builder.Services.AddScoped<IdentitySeeder>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -141,14 +143,10 @@ if (testConnectionRequested)
 }
 
 await ApplyPendingMigrationsAsync(app);
+await SeedIdentityAsync(app);
 
 if (app.Environment.IsDevelopment())
 {
-    using var scope = app.Services.CreateScope();
-    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
-    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-    await IdentitySeeder.SeedAsync(userManager, roleManager);
-
     app.UseSwagger();
     app.UseSwaggerUI();
 }
@@ -282,4 +280,11 @@ static async Task ApplyPendingMigrationsAsync(WebApplication app)
     Console.WriteLine($"Applying {pending.Count()} pending migration(s) to {dbContext.Database.GetDbConnection().Database}...");
     await dbContext.Database.MigrateAsync();
     Console.WriteLine("Database migrations applied successfully.");
+}
+
+static async Task SeedIdentityAsync(WebApplication app)
+{
+    using var scope = app.Services.CreateScope();
+    var seeder = scope.ServiceProvider.GetRequiredService<IdentitySeeder>();
+    await seeder.SeedAsync();
 }
