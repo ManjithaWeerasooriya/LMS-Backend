@@ -25,7 +25,7 @@ var builder = WebApplication.CreateBuilder(filteredArgs);
 
 builder.Services.AddControllers();
 builder.Services.AddHttpContextAccessor();
-
+builder.Services.AddScoped<IPublicService, PublicService>();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
