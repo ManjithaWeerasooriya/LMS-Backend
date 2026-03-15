@@ -32,12 +32,10 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowFrontend", policy =>
     {
         policy
-            .WithOrigins(
-                "http://localhost:3000",
-                "https://lms-fend.vercel.app",
-                "https://lms-f-a8cc9rdno-nirdeepanas-projects.vercel.app",
-                "https://lmsf-roan.vercel.app"
-            )
+            .SetIsOriginAllowed(origin =>
+                origin.StartsWith("http://localhost:", StringComparison.OrdinalIgnoreCase) ||
+                origin.StartsWith("https://localhost:", StringComparison.OrdinalIgnoreCase) ||
+                origin.Contains(".vercel.app", StringComparison.OrdinalIgnoreCase))
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
