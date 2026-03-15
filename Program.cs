@@ -35,7 +35,8 @@ builder.Services.AddCors(options =>
             .WithOrigins(
                 "http://localhost:3000",
                 "https://lms-fend.vercel.app",
-                "https://lms-f-a8cc9rdno-nirdeepanas-projects.vercel.app"
+                "https://lms-f-a8cc9rdno-nirdeepanas-projects.vercel.app",
+                "https://lmsf-roan.vercel.app"
             )
             .AllowAnyHeader()
             .AllowAnyMethod();
