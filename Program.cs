@@ -9,7 +9,6 @@ using LMS_Backend.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
@@ -26,22 +25,22 @@ builder.Services.AddControllers();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IPublicService, PublicService>();
 
+// CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
         policy
-            .WithOrigins(
-                "http://localhost:3000",
-                "https://lms-fend.vercel.app",
-                "https://lms-f-a8cc9rdno-nirdeepanas-projects.vercel.app",
-                "https://lmsf-roan.vercel.app"
-            )
+            .SetIsOriginAllowed(origin =>
+                origin.StartsWith("http://localhost:", StringComparison.OrdinalIgnoreCase) ||
+                origin.StartsWith("https://localhost:", StringComparison.OrdinalIgnoreCase) ||
+                origin.Contains(".vercel.app", StringComparison.OrdinalIgnoreCase))
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
 });
 
+// Database
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 if (string.IsNullOrWhiteSpace(connectionString))
 {
@@ -51,8 +50,10 @@ if (string.IsNullOrWhiteSpace(connectionString))
 builder.Services.AddDbContext<ApplicationDBContext>(options =>
     options.UseSqlServer(connectionString));
 
+// Email
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 
+// Identity
 builder.Services
     .AddIdentity<User, IdentityRole>(options =>
     {
@@ -63,6 +64,7 @@ builder.Services
     .AddEntityFrameworkStores<ApplicationDBContext>()
     .AddDefaultTokenProviders();
 
+// JWT Authentication
 var jwt = builder.Configuration.GetSection("Jwt");
 var keyBytes = Encoding.UTF8.GetBytes(jwt["Key"]!);
 
@@ -87,6 +89,8 @@ builder.Services.AddAuthentication(options =>
 });
 
 builder.Services.AddAuthorization();
+
+// Services
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<TeacherDashboardService>();
@@ -95,6 +99,7 @@ builder.Services.AddScoped<QuizService>();
 builder.Services.AddScoped<LiveClassService>();
 builder.Services.AddScoped<IdentitySeeder>();
 
+// Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -112,7 +117,7 @@ builder.Services.AddSwaggerGen(options =>
         options.IncludeXmlComments(xmlPath, includeControllerXmlComments: true);
     }
 
-    var securityScheme = new OpenApiSecurityScheme
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization",
         Description = "Enter JWT as: Bearer {token}",
@@ -120,14 +125,19 @@ builder.Services.AddSwaggerGen(options =>
         Type = SecuritySchemeType.Http,
         Scheme = JwtBearerDefaults.AuthenticationScheme,
         BearerFormat = "JWT"
-    };
-
-    options.AddSecurityDefinition("Bearer", securityScheme);
+    });
 
     options.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
         {
-            securityScheme,
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
             new List<string>()
         }
     });
@@ -141,6 +151,7 @@ if (testConnectionRequested)
     return;
 }
 
+// Apply migrations + seed
 await ApplyPendingMigrationsAsync(app);
 await SeedIdentityAsync(app);
 
@@ -157,6 +168,11 @@ app.UseAuthorization();
 app.MapControllers();
 app.Run();
 
+
+// ======================
+// Helpers
+// ======================
+
 static async Task SeedIdentityAsync(WebApplication app)
 {
     using var scope = app.Services.CreateScope();
@@ -171,9 +187,7 @@ static async Task ApplyPendingMigrationsAsync(WebApplication app)
 
     var pending = await dbContext.Database.GetPendingMigrationsAsync();
     if (!pending.Any())
-    {
         return;
-    }
 
     Console.WriteLine($"Applying {pending.Count()} pending migration(s)...");
     await dbContext.Database.MigrateAsync();
