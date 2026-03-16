@@ -146,7 +146,9 @@ public class AuthController : ControllerBase
         await _userManager.UpdateAsync(user);
 
         var roles = await _userManager.GetRolesAsync(user);
-        var role = roles.FirstOrDefault() ?? "Student";
+        var role = roles.Any(r => string.Equals(r, "Admin", StringComparison.OrdinalIgnoreCase))
+            ? "Admin"
+            : roles.FirstOrDefault() ?? "Student";
 
         var (accessToken, expiresIn) = await _tokenService.CreateAccessTokenAsync(user);
 

@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
-using System.Threading.Tasks;
 using LMS_Backend.Data;
 using LMS_Backend.Infrastructure.Seed;
 using LMS_Backend.Models.Entities;
@@ -10,7 +9,6 @@ using LMS_Backend.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
@@ -27,6 +25,7 @@ builder.Services.AddControllers();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IPublicService, PublicService>();
 
+// CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
@@ -41,6 +40,7 @@ builder.Services.AddCors(options =>
     });
 });
 
+// Database
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 if (string.IsNullOrWhiteSpace(connectionString))
 {
@@ -50,8 +50,10 @@ if (string.IsNullOrWhiteSpace(connectionString))
 builder.Services.AddDbContext<ApplicationDBContext>(options =>
     options.UseSqlServer(connectionString));
 
+// Email
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 
+// Identity
 builder.Services
     .AddIdentity<User, IdentityRole>(options =>
     {
@@ -62,37 +64,42 @@ builder.Services
     .AddEntityFrameworkStores<ApplicationDBContext>()
     .AddDefaultTokenProviders();
 
+// JWT Authentication
 var jwt = builder.Configuration.GetSection("Jwt");
 var keyBytes = Encoding.UTF8.GetBytes(jwt["Key"]!);
 
 builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
     {
-        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-    })
-    .AddJwtBearer(options =>
-    {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = jwt["Issuer"],
-            ValidAudience = jwt["Audience"],
-            IssuerSigningKey = new SymmetricSecurityKey(keyBytes),
-            ClockSkew = TimeSpan.FromSeconds(30)
-        };
-    });
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwt["Issuer"],
+        ValidAudience = jwt["Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(keyBytes),
+        ClockSkew = TimeSpan.FromSeconds(30)
+    };
+});
 
 builder.Services.AddAuthorization();
+
+// Services
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<TeacherDashboardService>();
 builder.Services.AddScoped<CourseService>();
 builder.Services.AddScoped<QuizService>();
 builder.Services.AddScoped<LiveClassService>();
+builder.Services.AddScoped<IdentitySeeder>();
 
+// Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -110,7 +117,7 @@ builder.Services.AddSwaggerGen(options =>
         options.IncludeXmlComments(xmlPath, includeControllerXmlComments: true);
     }
 
-    var securityScheme = new OpenApiSecurityScheme
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization",
         Description = "Enter JWT as: Bearer {token}",
@@ -118,9 +125,7 @@ builder.Services.AddSwaggerGen(options =>
         Type = SecuritySchemeType.Http,
         Scheme = JwtBearerDefaults.AuthenticationScheme,
         BearerFormat = "JWT"
-    };
-
-    options.AddSecurityDefinition("Bearer", securityScheme);
+    });
 
     options.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
@@ -146,134 +151,33 @@ if (testConnectionRequested)
     return;
 }
 
+// Apply migrations + seed
 await ApplyPendingMigrationsAsync(app);
+await SeedIdentityAsync(app);
 
 if (app.Environment.IsDevelopment())
 {
-    using var scope = app.Services.CreateScope();
-    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
-    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-    await IdentitySeeder.SeedAsync(userManager, roleManager);
-
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
 app.UseHttpsRedirection();
-
 app.UseCors("AllowFrontend");
-
 app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
-
 app.Run();
 
-static void LoadEnvFile()
+
+// ======================
+// Helpers
+// ======================
+
+static async Task SeedIdentityAsync(WebApplication app)
 {
-    var contentRoot = Directory.GetCurrentDirectory();
-
-    var environmentName = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT")
-        ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
-        ?? "Production";
-
-    environmentName = string.IsNullOrWhiteSpace(environmentName)
-        ? "Production"
-        : environmentName.Trim();
-
-    var candidateNames = new List<string> { ".env", $".env.{environmentName}" };
-    var knownEnvFiles = Directory
-        .EnumerateFiles(contentRoot, ".env*", SearchOption.TopDirectoryOnly)
-        .Select(Path.GetFullPath)
-        .ToList();
-
-    var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-    foreach (var candidate in candidateNames)
-    {
-        var resolved = ResolveEnvFilePath(contentRoot, candidate, knownEnvFiles);
-        if (resolved is null || !visited.Add(resolved))
-        {
-            continue;
-        }
-
-        ApplyEnvVariablesFromFile(resolved);
-    }
-}
-
-static string? ResolveEnvFilePath(string contentRoot, string fileName, List<string> knownEnvFiles)
-{
-    var desired = Path.GetFullPath(Path.Combine(contentRoot, fileName));
-    if (File.Exists(desired))
-    {
-        return desired;
-    }
-
-    return knownEnvFiles.FirstOrDefault(path =>
-        string.Equals(Path.GetFileName(path), fileName, StringComparison.OrdinalIgnoreCase));
-}
-
-static void ApplyEnvVariablesFromFile(string path)
-{
-    foreach (var line in File.ReadAllLines(path))
-    {
-        var trimmed = line.Trim();
-        if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith("#", StringComparison.Ordinal))
-        {
-            continue;
-        }
-
-        var separatorIndex = trimmed.IndexOf('=');
-        if (separatorIndex <= 0)
-        {
-            continue;
-        }
-
-        var key = trimmed[..separatorIndex].Trim();
-        var value = trimmed[(separatorIndex + 1)..].Trim();
-
-        if (value.Length >= 2 &&
-            value.StartsWith("\"", StringComparison.Ordinal) &&
-            value.EndsWith("\"", StringComparison.Ordinal))
-        {
-            value = value[1..^1];
-        }
-
-        Environment.SetEnvironmentVariable(key, value);
-    }
-}
-
-static bool IsTestConnectionArg(string arg) =>
-    string.Equals(arg, "--testconnection", StringComparison.OrdinalIgnoreCase) ||
-    string.Equals(arg, "-testconnection", StringComparison.OrdinalIgnoreCase) ||
-    string.Equals(arg, "/testconnection", StringComparison.OrdinalIgnoreCase);
-
-static async Task RunConnectionTestAsync(WebApplication app)
-{
-    Console.WriteLine($"Testing database connectivity for environment '{app.Environment.EnvironmentName}'...");
-
     using var scope = app.Services.CreateScope();
-    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDBContext>();
-
-    try
-    {
-        var canConnect = await dbContext.Database.CanConnectAsync();
-        if (canConnect)
-        {
-            Console.WriteLine("Database connection succeeded.");
-        }
-        else
-        {
-            Console.Error.WriteLine("Database connection failed.");
-            Environment.ExitCode = 1;
-        }
-    }
-    catch (Exception ex)
-    {
-        Console.Error.WriteLine($"Database connection failed: {ex.Message}");
-        Environment.ExitCode = 1;
-    }
+    var seeder = scope.ServiceProvider.GetRequiredService<IdentitySeeder>();
+    await seeder.SeedAsync();
 }
 
 static async Task ApplyPendingMigrationsAsync(WebApplication app)
@@ -283,11 +187,64 @@ static async Task ApplyPendingMigrationsAsync(WebApplication app)
 
     var pending = await dbContext.Database.GetPendingMigrationsAsync();
     if (!pending.Any())
-    {
         return;
-    }
 
-    Console.WriteLine($"Applying {pending.Count()} pending migration(s) to {dbContext.Database.GetDbConnection().Database}...");
+    Console.WriteLine($"Applying {pending.Count()} pending migration(s)...");
     await dbContext.Database.MigrateAsync();
     Console.WriteLine("Database migrations applied successfully.");
+}
+
+static bool IsTestConnectionArg(string arg) =>
+    string.Equals(arg, "--testconnection", StringComparison.OrdinalIgnoreCase) ||
+    string.Equals(arg, "-testconnection", StringComparison.OrdinalIgnoreCase) ||
+    string.Equals(arg, "/testconnection", StringComparison.OrdinalIgnoreCase);
+
+static async Task RunConnectionTestAsync(WebApplication app)
+{
+    using var scope = app.Services.CreateScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDBContext>();
+
+    try
+    {
+        var canConnect = await dbContext.Database.CanConnectAsync();
+        Console.WriteLine(canConnect
+            ? "Database connection succeeded."
+            : "Database connection failed.");
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Database connection failed: {ex.Message}");
+        Environment.ExitCode = 1;
+    }
+}
+
+static void LoadEnvFile()
+{
+    var contentRoot = Directory.GetCurrentDirectory();
+    var environmentName =
+        Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT")
+        ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
+        ?? "Production";
+
+    var candidateNames = new List<string> { ".env", $".env.{environmentName}" };
+
+    foreach (var file in candidateNames)
+    {
+        var fullPath = Path.Combine(contentRoot, file);
+        if (!File.Exists(fullPath)) continue;
+
+        foreach (var line in File.ReadAllLines(fullPath))
+        {
+            var trimmed = line.Trim();
+            if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith("#")) continue;
+
+            var separatorIndex = trimmed.IndexOf('=');
+            if (separatorIndex <= 0) continue;
+
+            var key = trimmed[..separatorIndex].Trim();
+            var value = trimmed[(separatorIndex + 1)..].Trim().Trim('"');
+
+            Environment.SetEnvironmentVariable(key, value);
+        }
+    }
 }
