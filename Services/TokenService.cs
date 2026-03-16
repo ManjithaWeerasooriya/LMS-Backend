@@ -31,19 +31,30 @@ public class TokenService
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
         var roles = await _userManager.GetRolesAsync(user);
-        var primaryRole = roles.FirstOrDefault() ?? "Student";
+        var primaryRole = ResolvePrimaryRole(roles);
 
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, user.Id),
-            new(JwtRegisteredClaimNames.Email, user.Email ?? ""),
-            new(ClaimTypes.Name, user.UserName ?? user.Email ?? ""),
-            new(ClaimTypes.Role, primaryRole),
+            new(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
+            new(ClaimTypes.Name, user.UserName ?? user.Email ?? string.Empty),
             new("status", user.Status.ToString()),
 
             // used to invalidate old JWTs after password change
             new("AspNet.Identity.SecurityStamp", user.SecurityStamp ?? string.Empty)
         };
+
+        if (roles.Count == 0)
+        {
+            claims.Add(new Claim(ClaimTypes.Role, primaryRole));
+        }
+        else
+        {
+            foreach (var role in roles)
+            {
+                claims.Add(new Claim(ClaimTypes.Role, role));
+            }
+        }
 
         var minutes = int.Parse(jwt["AccessTokenMinutes"]!);
         var expires = DateTime.UtcNow.AddMinutes(minutes);
@@ -58,6 +69,21 @@ public class TokenService
 
         var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
         return (tokenString, minutes * 60);
+    }
+
+    private static string ResolvePrimaryRole(IList<string> roles)
+    {
+        if (roles.Count == 0)
+        {
+            return "Student";
+        }
+
+        if (roles.Any(r => string.Equals(r, "Admin", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "Admin";
+        }
+
+        return roles.First();
     }
 
     public async Task<string> CreateAndStoreRefreshTokenAsync(User user)
