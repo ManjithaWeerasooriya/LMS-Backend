@@ -92,6 +92,7 @@ builder.Services.AddScoped<TeacherDashboardService>();
 builder.Services.AddScoped<CourseService>();
 builder.Services.AddScoped<QuizService>();
 builder.Services.AddScoped<LiveClassService>();
+builder.Services.AddScoped<StudentDashboardService>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
