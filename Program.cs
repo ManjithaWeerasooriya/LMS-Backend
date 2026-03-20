@@ -23,10 +23,14 @@ var filteredArgs = testConnectionRequested
 
 var builder = WebApplication.CreateBuilder(filteredArgs);
 
+// Controllers + HttpContext
 builder.Services.AddControllers();
 builder.Services.AddHttpContextAccessor();
+
+// Public services
 builder.Services.AddScoped<IPublicService, PublicService>();
 
+// CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
@@ -41,6 +45,7 @@ builder.Services.AddCors(options =>
     });
 });
 
+// Database
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 if (string.IsNullOrWhiteSpace(connectionString))
 {
@@ -50,8 +55,10 @@ if (string.IsNullOrWhiteSpace(connectionString))
 builder.Services.AddDbContext<ApplicationDBContext>(options =>
     options.UseSqlServer(connectionString));
 
+// Email
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 
+// Identity
 builder.Services
     .AddIdentity<User, IdentityRole>(options =>
     {
@@ -62,6 +69,7 @@ builder.Services
     .AddEntityFrameworkStores<ApplicationDBContext>()
     .AddDefaultTokenProviders();
 
+// JWT Authentication
 var jwt = builder.Configuration.GetSection("Jwt");
 var keyBytes = Encoding.UTF8.GetBytes(jwt["Key"]!);
 
@@ -86,6 +94,8 @@ builder.Services.AddAuthentication(options =>
     });
 
 builder.Services.AddAuthorization();
+
+// Application services
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<TeacherDashboardService>();
@@ -94,6 +104,7 @@ builder.Services.AddScoped<QuizService>();
 builder.Services.AddScoped<LiveClassService>();
 builder.Services.AddScoped<StudentDashboardService>();
 
+// Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -147,8 +158,10 @@ if (testConnectionRequested)
     return;
 }
 
+// Apply pending migrations
 await ApplyPendingMigrationsAsync(app);
 
+// Development-only seeding + Swagger
 if (app.Environment.IsDevelopment())
 {
     using var scope = app.Services.CreateScope();
@@ -161,15 +174,15 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
 app.UseCors("AllowFrontend");
-
 app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
-
 app.Run();
+
+// ======================
+// Helpers
+// ======================
 
 static void LoadEnvFile()
 {
