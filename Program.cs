@@ -21,11 +21,8 @@ var filteredArgs = testConnectionRequested
 
 var builder = WebApplication.CreateBuilder(filteredArgs);
 
-// Controllers + HttpContext
 builder.Services.AddControllers();
 builder.Services.AddHttpContextAccessor();
-
-// Public services
 builder.Services.AddScoped<IPublicService, PublicService>();
 
 // CORS
@@ -100,7 +97,8 @@ builder.Services.AddScoped<TeacherDashboardService>();
 builder.Services.AddScoped<CourseService>();
 builder.Services.AddScoped<QuizService>();
 builder.Services.AddScoped<LiveClassService>();
-builder.Services.AddScoped<StudentDashboardService>(); // student dashboard backend
+builder.Services.AddScoped<StudentDashboardService>(); // <-- your student dashboard backend
+builder.Services.AddScoped<IdentitySeeder>();
 
 // Swagger
 builder.Services.AddEndpointsApiExplorer();
@@ -179,9 +177,8 @@ app.Run();
 static async Task SeedIdentityAsync(WebApplication app)
 {
     using var scope = app.Services.CreateScope();
-    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
-    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-    await IdentitySeeder.SeedAsync(userManager, roleManager);
+    var seeder = scope.ServiceProvider.GetRequiredService<IdentitySeeder>();
+    await seeder.SeedAsync();
 }
 
 static async Task ApplyPendingMigrationsAsync(WebApplication app)
