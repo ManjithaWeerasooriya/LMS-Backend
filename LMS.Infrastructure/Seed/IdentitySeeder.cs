@@ -6,19 +6,28 @@ namespace LMS_Backend.Infrastructure.Seed;
 /// <summary>
 /// Seeds core identity data (roles and admin user) during development.
 /// </summary>
-public static class IdentitySeeder
+public class IdentitySeeder
 {
+    private readonly UserManager<User> _userManager;
+    private readonly RoleManager<IdentityRole> _roleManager;
+
     private const string AdminEmail = "admin@lms.local";
     private const string AdminPassword = "Admin123!";
     private const string AdminRole = "Admin";
 
+    public IdentitySeeder(UserManager<User> userManager, RoleManager<IdentityRole> roleManager)
+    {
+        _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
+        _roleManager = roleManager ?? throw new ArgumentNullException(nameof(roleManager));
+    }
+
     /// <summary>
     /// Ensures the Admin role and default admin user exist.
     /// </summary>
-    public static async Task SeedAsync(UserManager<User> userManager, RoleManager<IdentityRole> roleManager)
+    public async Task SeedAsync()
     {
-        ArgumentNullException.ThrowIfNull(userManager);
-        ArgumentNullException.ThrowIfNull(roleManager);
+        var userManager = _userManager;
+        var roleManager = _roleManager;
 
         if (!await roleManager.RoleExistsAsync(AdminRole))
         {
