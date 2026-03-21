@@ -252,4 +252,3 @@ static void LoadEnvFile()
         }
     }
 }
-
