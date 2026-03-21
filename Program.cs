@@ -93,14 +93,14 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
-// Application services
+// Services
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<TeacherDashboardService>();
 builder.Services.AddScoped<CourseService>();
 builder.Services.AddScoped<QuizService>();
 builder.Services.AddScoped<LiveClassService>();
-builder.Services.AddScoped<StudentDashboardService>();
+builder.Services.AddScoped<StudentDashboardService>(); // student dashboard backend
 
 // Swagger
 builder.Services.AddEndpointsApiExplorer();
@@ -154,7 +154,7 @@ if (testConnectionRequested)
     return;
 }
 
-// Apply migrations + seed identity (admin user / roles)
+// Apply migrations + seed
 await ApplyPendingMigrationsAsync(app);
 await SeedIdentityAsync(app);
 
@@ -170,6 +170,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.Run();
+
 
 // ======================
 // Helpers
