@@ -11,9 +11,7 @@ public abstract class UiTestBase : IDisposable
     protected UiTestBase(string browserName)
     {
         Driver = SeleniumDriverFactory.Create(browserName);
-
-        BaseUrl = Environment.GetEnvironmentVariable("LMS_UI_BASE_URL")
-                  ?? "http://localhost:3000";
+        BaseUrl = UiTestEnvironment.BaseUrl;
     }
 
     public void Dispose()
@@ -22,4 +20,3 @@ public abstract class UiTestBase : IDisposable
         Driver.Dispose();
     }
 }
-

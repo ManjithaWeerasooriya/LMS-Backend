@@ -13,16 +13,12 @@ public class LoginPageTests
         "edge"
     };
 
-    [Theory]
+    [UiTheory]
     [MemberData(nameof(Browsers))]
     public void LoginPage_ShowsValidationErrors_ForEmptyFields(string browserName)
     {
         using var driver = SeleniumDriverFactory.Create(browserName);
-
-        var baseUrl = Environment.GetEnvironmentVariable("LMS_UI_BASE_URL")
-                      ?? "http://localhost:3000";
-
-        driver.Navigate().GoToUrl(new Uri(new Uri(baseUrl), "/login"));
+        driver.Navigate().GoToUrl(new Uri(new Uri(UiTestEnvironment.BaseUrl), "/login"));
 
         var wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
 
