@@ -22,6 +22,7 @@ Thumbs.db
 *.log
 logs/
 tmp/
+LMS-Backend.Tests/TestResults/
 
 # Environment / secrets
 .env
