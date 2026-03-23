@@ -1,6 +1,8 @@
+using System.Linq;
 using LMS_Backend.Data;
 using LMS_Backend.Models.DTOs.Teacher;
 using LMS_Backend.Models.Entities;
+using LMS_Backend.Services.Reporting;
 using Microsoft.EntityFrameworkCore;
 
 namespace LMS_Backend.Services;
@@ -8,18 +10,18 @@ namespace LMS_Backend.Services;
 public class TeacherDashboardService
 {
     private readonly ApplicationDBContext _dbContext;
+    private readonly IReportingService _reportingService;
 
-    public TeacherDashboardService(ApplicationDBContext dbContext)
+    public TeacherDashboardService(ApplicationDBContext dbContext, IReportingService reportingService)
     {
         _dbContext = dbContext;
+        _reportingService = reportingService;
     }
 
     public async Task<TeacherDashboardResponseDto> GetDashboardAsync(
         string teacherId,
         CancellationToken cancellationToken)
     {
-        var nowUtc = DateTime.UtcNow;
-
         var coursesQuery = _dbContext
             .Courses
             .Include(c => c.Enrollments)
@@ -27,20 +29,15 @@ public class TeacherDashboardService
 
         var myCoursesCount = await coursesQuery.CountAsync(cancellationToken);
 
-        var totalStudents = await _dbContext.CourseEnrollments
-            .Where(e => e.Course.TeacherId == teacherId)
-            .Select(e => e.StudentId)
-            .Distinct()
-            .CountAsync(cancellationToken);
+        var enrollmentStats = await _reportingService.GetEnrollmentStatisticsAsync(teacherId, cancellationToken);
+        var quizStats = await _reportingService.GetQuizStatisticsAsync(teacherId, cancellationToken);
+        var attendanceStats = await _reportingService.GetAttendanceStatisticsAsync(teacherId, cancellationToken);
+        var completionRates = await _reportingService.GetCourseCompletionRatesAsync(teacherId, cancellationToken);
 
         var pendingSubmissionsCount = await _dbContext.AssignmentSubmissions
             .Where(s =>
                 s.Status == SubmissionStatus.Pending &&
                 s.Assignment.Course.TeacherId == teacherId)
-            .CountAsync(cancellationToken);
-
-        var upcomingLiveSessionsCount = await _dbContext.LiveClasses
-            .Where(l => l.TeacherId == teacherId && l.ScheduledAt >= nowUtc)
             .CountAsync(cancellationToken);
 
         var myCourses = await coursesQuery
@@ -58,36 +55,17 @@ public class TeacherDashboardService
             })
             .ToListAsync(cancellationToken);
 
-        var performance = await CalculatePerformanceAsync(teacherId, cancellationToken);
-
-        var completionRates = await coursesQuery
-            .Select(c => new CourseCompletionRateItemDto
-            {
-                CourseId = c.Id,
-                CourseTitle = c.Title,
-                CompletionRate = c.Enrollments.Any()
-                    ? (double)c.Enrollments.Count(e => e.CompletedAt != null) /
-                      c.Enrollments.Count * 100.0
-                    : 0
-            })
-            .ToListAsync(cancellationToken);
-
-        var upcomingLiveSessions = await _dbContext.LiveClasses
-            .Where(l => l.TeacherId == teacherId && l.ScheduledAt >= nowUtc)
-            .OrderBy(l => l.ScheduledAt)
-            .Take(5)
+        var upcomingLiveSessions = attendanceStats.UpcomingSessionDetails
             .Select(l => new TeacherDashboardLiveSessionItemDto
             {
-                LiveClassId = l.Id,
+                LiveClassId = l.LiveClassId,
                 Topic = l.Topic,
                 ScheduledAt = l.ScheduledAt,
-                CourseTitle = l.Course != null ? l.Course.Title : null,
-                StudentsEnrolled = l.Course != null
-                    ? l.Course.Enrollments.Count
-                    : 0,
+                CourseTitle = l.CourseTitle,
+                StudentsEnrolled = l.StudentsEnrolled,
                 MeetingLink = l.MeetingLink
             })
-            .ToListAsync(cancellationToken);
+            .ToList();
 
         var pendingSubmissions = await _dbContext.Assignments
             .Where(a => a.Course.TeacherId == teacherId)
@@ -110,71 +88,21 @@ public class TeacherDashboardService
             Summary = new TeacherDashboardSummaryDto
             {
                 MyCourses = myCoursesCount,
-                TotalStudents = totalStudents,
+                TotalStudents = enrollmentStats.TotalStudents,
                 PendingSubmissions = pendingSubmissionsCount,
-                UpcomingLiveSessions = upcomingLiveSessionsCount
+                UpcomingLiveSessions = attendanceStats.UpcomingSessions
             },
             MyCourses = myCourses,
-            Performance = performance,
-            CompletionRates = completionRates,
+            Performance = new TeacherDashboardPerformanceDto
+            {
+                ExcellentPercentage = quizStats.PerformanceBands.ExcellentPercentage,
+                GoodPercentage = quizStats.PerformanceBands.GoodPercentage,
+                AveragePercentage = quizStats.PerformanceBands.AveragePercentage,
+                NeedsImprovementPercentage = quizStats.PerformanceBands.NeedsImprovementPercentage
+            },
+            CompletionRates = completionRates.ToList(),
             UpcomingLiveSessions = upcomingLiveSessions,
             PendingSubmissions = pendingSubmissions
         };
     }
-
-    private async Task<TeacherDashboardPerformanceDto> CalculatePerformanceAsync(
-        string teacherId,
-        CancellationToken cancellationToken)
-    {
-        var attempts = await _dbContext.QuizAttempts
-            .Include(a => a.Quiz)
-            .ThenInclude(q => q.Course)
-            .Where(a => a.Quiz.Course.TeacherId == teacherId && a.Quiz.TotalMarks > 0)
-            .ToListAsync(cancellationToken);
-
-        if (attempts.Count == 0)
-        {
-            return new TeacherDashboardPerformanceDto();
-        }
-
-        var total = attempts.Count;
-        var excellent = 0;
-        var good = 0;
-        var average = 0;
-        var needsImprovement = 0;
-
-        foreach (var attempt in attempts)
-        {
-            var percent = (double)attempt.Score / attempt.Quiz.TotalMarks * 100.0;
-
-            if (percent >= 80)
-            {
-                excellent++;
-            }
-            else if (percent >= 60)
-            {
-                good++;
-            }
-            else if (percent >= 40)
-            {
-                average++;
-            }
-            else
-            {
-                needsImprovement++;
-            }
-        }
-
-        static double Percent(int count, int totalCount) =>
-            totalCount == 0 ? 0 : Math.Round((double)count / totalCount * 100.0, 1);
-
-        return new TeacherDashboardPerformanceDto
-        {
-            ExcellentPercentage = Percent(excellent, total),
-            GoodPercentage = Percent(good, total),
-            AveragePercentage = Percent(average, total),
-            NeedsImprovementPercentage = Percent(needsImprovement, total)
-        };
-    }
 }
-

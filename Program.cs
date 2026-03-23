@@ -6,6 +6,7 @@ using LMS_Backend.Data;
 using LMS_Backend.Infrastructure.Seed;
 using LMS_Backend.Models.Entities;
 using LMS_Backend.Services;
+using LMS_Backend.Services.Reporting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -98,6 +99,7 @@ builder.Services.AddScoped<CourseService>();
 builder.Services.AddScoped<QuizService>();
 builder.Services.AddScoped<LiveClassService>();
 builder.Services.AddScoped<StudentDashboardService>();
+builder.Services.AddScoped<IReportingService, ReportingService>();
 builder.Services.AddScoped<IdentitySeeder>();
 
 // Swagger
