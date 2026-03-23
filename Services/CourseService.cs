@@ -157,5 +157,131 @@ public class CourseService
         await _dbContext.SaveChangesAsync(cancellationToken);
         return true;
     }
+
+    public class CourseEnrollmentResult
+    {
+        public bool Success { get; init; }
+        public string? ErrorCode { get; init; }
+        public string? ErrorMessage { get; init; }
+    }
+
+    public async Task<CourseEnrollmentResult> EnrollStudentInCourseAsync(
+        Guid courseId,
+        string studentId,
+        CancellationToken cancellationToken)
+    {
+        var course = await _dbContext.Courses
+            .Include(c => c.Enrollments)
+            .FirstOrDefaultAsync(c => c.Id == courseId, cancellationToken);
+
+        if (course is null)
+        {
+            return new CourseEnrollmentResult
+            {
+                Success = false,
+                ErrorCode = "CourseNotFound",
+                ErrorMessage = "Course not found."
+            };
+        }
+
+        if (course.Status != CourseStatus.Active)
+        {
+            return new CourseEnrollmentResult
+            {
+                Success = false,
+                ErrorCode = "CourseNotActive",
+                ErrorMessage = "Course is not open for enrollment."
+            };
+        }
+
+        var existing = course.Enrollments.FirstOrDefault(e => e.StudentId == studentId);
+        if (existing is not null)
+        {
+            // Idempotent: already enrolled is treated as success.
+            return new CourseEnrollmentResult { Success = true };
+        }
+
+        if (course.MaxStudents > 0 && course.Enrollments.Count >= course.MaxStudents)
+        {
+            return new CourseEnrollmentResult
+            {
+                Success = false,
+                ErrorCode = "CourseFull",
+                ErrorMessage = "Course has reached its maximum capacity."
+            };
+        }
+
+        var enrollment = new CourseEnrollment
+        {
+            CourseId = course.Id,
+            StudentId = studentId,
+            EnrolledAt = DateTime.UtcNow,
+            ProgressPercent = 0
+        };
+
+        _dbContext.CourseEnrollments.Add(enrollment);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return new CourseEnrollmentResult { Success = true };
+    }
+
+    public async Task<List<StudentCourseListItemDto>> GetCoursesForStudentAsync(
+        string studentId,
+        string? search,
+        CancellationToken cancellationToken)
+    {
+        var query = _dbContext.Courses
+            .Include(c => c.Enrollments)
+            .Include(c => c.Teacher)
+            .Where(c => c.Status == CourseStatus.Active);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            search = search.Trim();
+            query = query.Where(c => c.Title.Contains(search));
+        }
+
+        return await query
+            .OrderByDescending(c => c.CreatedAt)
+            .Select(c => new StudentCourseListItemDto
+            {
+                Id = c.Id,
+                Title = c.Title,
+                Category = c.Category,
+                InstructorName = c.Teacher.FirstName + " " + c.Teacher.LastName,
+                StudentsEnrolled = c.Enrollments.Count,
+                Price = c.Price,
+                Rating = c.AverageRating,
+                IsEnrolled = c.Enrollments.Any(e => e.StudentId == studentId)
+            })
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<StudentCourseListItemDto>> GetEnrolledCoursesForStudentAsync(
+        string studentId,
+        CancellationToken cancellationToken)
+    {
+        var query = _dbContext.Courses
+            .Include(c => c.Enrollments)
+            .Include(c => c.Teacher)
+            .Where(c => c.Status == CourseStatus.Active &&
+                        c.Enrollments.Any(e => e.StudentId == studentId));
+
+        return await query
+            .OrderByDescending(c => c.CreatedAt)
+            .Select(c => new StudentCourseListItemDto
+            {
+                Id = c.Id,
+                Title = c.Title,
+                Category = c.Category,
+                InstructorName = c.Teacher.FirstName + " " + c.Teacher.LastName,
+                StudentsEnrolled = c.Enrollments.Count,
+                Price = c.Price,
+                Rating = c.AverageRating,
+                IsEnrolled = true
+            })
+            .ToListAsync(cancellationToken);
+    }
 }
+
 

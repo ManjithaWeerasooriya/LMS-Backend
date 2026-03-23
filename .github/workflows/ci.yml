@@ -33,4 +33,4 @@ jobs:
         run: dotnet build LMS-Backend.sln --no-restore -c Release
 
       - name: Test
-        run: dotnet test LMS-Backend.sln --no-build -c Release --filter "FullyQualifiedName!~UI"
+        run: dotnet test LMS-Backend.sln --no-build -c Release

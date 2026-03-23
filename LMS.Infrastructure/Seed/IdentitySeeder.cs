@@ -34,6 +34,9 @@ public class IdentitySeeder
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /// <summary>
+    /// Ensures the Admin role and default admin user exist.
+    /// </summary>
     public async Task SeedAsync()
     {
         var adminEmail = _configuration[$"{ConfigSection}:Email"]?.Trim();
