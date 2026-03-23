@@ -1,4 +1,5 @@
 using LMS_Backend.Data;
+using LMS_Backend.Models.DTOs.Common;
 using LMS_Backend.Models.DTOs.Courses;
 using LMS_Backend.Models.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -51,32 +52,45 @@ public class CourseService
         string? search,
         CancellationToken cancellationToken)
     {
-        var query = _dbContext.Courses
-            .Include(c => c.Enrollments)
-            .Where(c => c.TeacherId == teacherId);
+        var query = BuildCourseQuery(teacherId, null, search, includeEnrollments: true)
+            .OrderByDescending(c => c.CreatedAt);
 
-        if (!string.IsNullOrWhiteSpace(search))
+        return await ProjectToCourseListItems(query).ToListAsync(cancellationToken);
+    }
+
+    public async Task<PagedResult<CourseListItemDto>> GetCoursesForAdminAsync(
+        CourseQueryOptions options)
+    {
+        if (options == null)
         {
-            search = search.Trim();
-            query = query.Where(c => c.Title.Contains(search));
+            throw new ArgumentNullException(nameof(options));
         }
 
-        var courses = await query
-            .OrderByDescending(c => c.CreatedAt)
-            .Select(c => new CourseListItemDto
-            {
-                Id = c.Id,
-                Title = c.Title,
-                Category = c.Category,
-                InstructorName = c.Teacher.FirstName + " " + c.Teacher.LastName,
-                Students = c.Enrollments.Count,
-                Price = c.Price,
-                Rating = c.AverageRating,
-                Status = c.Status.ToString()
-            })
-            .ToListAsync(cancellationToken);
+        options.Normalize();
 
-        return courses;
+        var query = BuildCourseQuery(
+            options.TeacherId,
+            options.Status,
+            options.Search,
+            includeEnrollments: true);
+
+        var totalCount = await query.CountAsync();
+        var skip = (options.PageNumber - 1) * options.PageSize;
+
+        var pagedQuery = query
+            .OrderByDescending(c => c.CreatedAt)
+            .Skip(skip)
+            .Take(options.PageSize);
+
+        var items = await ProjectToCourseListItems(pagedQuery).ToListAsync();
+
+        return new PagedResult<CourseListItemDto>
+        {
+            PageNumber = options.PageNumber,
+            PageSize = options.PageSize,
+            TotalCount = totalCount,
+            Items = items
+        };
     }
 
     public async Task<Course?> GetCourseAsync(
@@ -155,6 +169,38 @@ public class CourseService
 
         _dbContext.Courses.Remove(course);
         await _dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> DisableCourseAdminAsync(Guid courseId)
+    {
+        var course = await _dbContext.Courses
+            .FirstOrDefaultAsync(c => c.Id == courseId);
+
+        if (course == null)
+        {
+            return false;
+        }
+
+        course.Status = CourseStatus.Archived;
+        course.UpdatedAt = DateTime.UtcNow;
+
+        await _dbContext.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task<bool> DeleteCourseAdminAsync(Guid courseId)
+    {
+        var course = await _dbContext.Courses
+            .FirstOrDefaultAsync(c => c.Id == courseId);
+
+        if (course == null)
+        {
+            return false;
+        }
+
+        _dbContext.Courses.Remove(course);
+        await _dbContext.SaveChangesAsync();
         return true;
     }
 
@@ -282,6 +328,51 @@ public class CourseService
             })
             .ToListAsync(cancellationToken);
     }
+
+    private IQueryable<Course> BuildCourseQuery(
+        string? teacherId,
+        CourseStatus? status,
+        string? search,
+        bool includeEnrollments)
+    {
+        IQueryable<Course> query = _dbContext.Courses.AsNoTracking();
+
+        if (includeEnrollments)
+        {
+            query = query.Include(c => c.Enrollments);
+        }
+
+        if (!string.IsNullOrWhiteSpace(teacherId))
+        {
+            query = query.Where(c => c.TeacherId == teacherId);
+        }
+
+        if (status.HasValue)
+        {
+            query = query.Where(c => c.Status == status.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(c => c.Title.Contains(term));
+        }
+
+        return query;
+    }
+
+    private static IQueryable<CourseListItemDto> ProjectToCourseListItems(IQueryable<Course> query)
+    {
+        return query.Select(c => new CourseListItemDto
+        {
+            Id = c.Id,
+            Title = c.Title,
+            Category = c.Category,
+            InstructorName = c.Teacher.FirstName + " " + c.Teacher.LastName,
+            Students = c.Enrollments.Count,
+            Price = c.Price,
+            Rating = c.AverageRating,
+            Status = c.Status.ToString()
+        });
+    }
 }
-
-
