@@ -1,3 +1,4 @@
+using System.Linq;
 using LMS_Backend.Data;
 using LMS_Backend.Models.DTOs.Courses;
 using LMS_Backend.Models.Entities;
@@ -234,6 +235,106 @@ public class CourseServiceTests
 
         var service = new CourseService(dbContext);
         var deleted = await service.DeleteCourseAsync(course.Id, "teacher-1", CancellationToken.None);
+
+        Assert.True(deleted);
+        Assert.Empty(dbContext.Courses);
+    }
+
+    [Fact]
+    public async Task GetCoursesForAdminAsync_AppliesFiltersAndPagination()
+    {
+        await using var dbContext = CreateDbContext();
+        var teacher = CreateTeacher("teacher-1", "Ada", "Lovelace");
+        var otherTeacher = CreateTeacher("teacher-2", "Grace", "Hopper");
+
+        dbContext.Users.AddRange(teacher, otherTeacher);
+
+        var includedCourse = new Course
+        {
+            TeacherId = teacher.Id,
+            Teacher = teacher,
+            Title = "GraphQL Fundamentals",
+            Status = CourseStatus.Active,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        var excludedByStatus = new Course
+        {
+            TeacherId = teacher.Id,
+            Teacher = teacher,
+            Title = "GraphQL Advanced",
+            Status = CourseStatus.Archived,
+            CreatedAt = DateTime.UtcNow.AddDays(-1)
+        };
+
+        var excludedByTeacher = new Course
+        {
+            TeacherId = otherTeacher.Id,
+            Teacher = otherTeacher,
+            Title = "GraphQL For Ops",
+            Status = CourseStatus.Active,
+            CreatedAt = DateTime.UtcNow.AddDays(-2)
+        };
+
+        dbContext.Courses.AddRange(includedCourse, excludedByStatus, excludedByTeacher);
+        await dbContext.SaveChangesAsync();
+
+        var service = new CourseService(dbContext);
+        var options = new CourseQueryOptions
+        {
+            PageNumber = 1,
+            PageSize = 1,
+            TeacherId = teacher.Id,
+            Status = CourseStatus.Active,
+            Search = "GraphQL"
+        };
+
+        var result = await service.GetCoursesForAdminAsync(options);
+
+        Assert.Equal(1, result.TotalCount);
+        Assert.Single(result.Items);
+        Assert.Equal(includedCourse.Id, result.Items[0].Id);
+    }
+
+    [Fact]
+    public async Task DisableCourseAdminAsync_SetsStatusToArchived()
+    {
+        await using var dbContext = CreateDbContext();
+        var course = new Course
+        {
+            TeacherId = "teacher-1",
+            Title = "Security 101",
+            Status = CourseStatus.Active
+        };
+
+        dbContext.Courses.Add(course);
+        await dbContext.SaveChangesAsync();
+
+        var service = new CourseService(dbContext);
+        var disabled = await service.DisableCourseAdminAsync(course.Id);
+
+        Assert.True(disabled);
+        var stored = await dbContext.Courses.SingleAsync();
+        Assert.Equal(CourseStatus.Archived, stored.Status);
+        Assert.NotNull(stored.UpdatedAt);
+    }
+
+    [Fact]
+    public async Task DeleteCourseAdminAsync_RemovesCourseWithoutTeacherCheck()
+    {
+        await using var dbContext = CreateDbContext();
+        var course = new Course
+        {
+            TeacherId = "teacher-1",
+            Title = "Legacy Course",
+            Status = CourseStatus.Active
+        };
+
+        dbContext.Courses.Add(course);
+        await dbContext.SaveChangesAsync();
+
+        var service = new CourseService(dbContext);
+        var deleted = await service.DeleteCourseAdminAsync(course.Id);
 
         Assert.True(deleted);
         Assert.Empty(dbContext.Courses);
