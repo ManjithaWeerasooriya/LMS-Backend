@@ -98,6 +98,7 @@ builder.Services.AddScoped<CourseService>();
 builder.Services.AddScoped<QuizService>();
 builder.Services.AddScoped<LiveClassService>();
 builder.Services.AddScoped<StudentDashboardService>();
+builder.Services.AddScoped<CourseDiscussionService>();
 builder.Services.AddScoped<IdentitySeeder>();
 
 // Swagger

@@ -17,6 +17,7 @@ public class ApplicationDBContext : IdentityDbContext<User>
     public DbSet<LiveClass> LiveClasses => Set<LiveClass>();
     public DbSet<Assignment> Assignments => Set<Assignment>();
     public DbSet<AssignmentSubmission> AssignmentSubmissions => Set<AssignmentSubmission>();
+    public DbSet<CourseDiscussionMessage> CourseDiscussionMessages => Set<CourseDiscussionMessage>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -97,5 +98,23 @@ public class ApplicationDBContext : IdentityDbContext<User>
             .WithMany()
             .HasForeignKey(s => s.StudentId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Entity<CourseDiscussionMessage>()
+            .HasOne(m => m.Course)
+            .WithMany(c => c.DiscussionMessages)
+            .HasForeignKey(m => m.CourseId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<CourseDiscussionMessage>()
+            .HasOne(m => m.Student)
+            .WithMany()
+            .HasForeignKey(m => m.StudentId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Entity<CourseDiscussionMessage>()
+            .HasOne(m => m.ParentMessage)
+            .WithMany(p => p.Replies)
+            .HasForeignKey(m => m.ParentMessageId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }
