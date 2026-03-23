@@ -28,6 +28,15 @@ public class CourseDiscussionService
             .AnyAsync(e => e.CourseId == courseId && e.StudentId == studentId, cancellationToken);
     }
 
+    public async Task<bool> IsTeacherOwnerOfCourseAsync(
+        Guid courseId,
+        string teacherId,
+        CancellationToken cancellationToken)
+    {
+        return await _dbContext.Courses
+            .AnyAsync(c => c.Id == courseId && c.TeacherId == teacherId, cancellationToken);
+    }
+
     public async Task<List<CourseDiscussionMessageDto>> GetDiscussionForCourseAsync(
         Guid courseId,
         CancellationToken cancellationToken)
@@ -130,4 +139,3 @@ public class CourseDiscussionService
         return initials.Length > 0 ? initials : "S";
     }
 }
-
