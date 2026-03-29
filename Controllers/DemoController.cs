@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using LMS_Backend.Infrastructure.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -26,7 +27,7 @@ public class DemoController : ControllerBase
 
     // 🎓 Student only
     [HttpGet("student")]
-    [Authorize(Roles = "Student")]
+    [Authorize(Policy = AppPolicies.StudentOnly)]
     public IActionResult StudentOnly()
     {
         return Ok("Hello Student 👋");
@@ -34,7 +35,7 @@ public class DemoController : ControllerBase
 
     // 👩‍🏫 Teacher only
     [HttpGet("teacher")]
-    [Authorize(Roles = "Teacher")]
+    [Authorize(Policy = AppPolicies.TeacherOnly)]
     public IActionResult TeacherOnly()
     {
         return Ok("Hello Teacher 👩‍🏫");
@@ -48,7 +49,7 @@ public class DemoController : ControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         var email = User.FindFirstValue(ClaimTypes.Email);
         var username = User.FindFirstValue(ClaimTypes.Name);
-        var role = User.FindFirstValue(ClaimTypes.Role);
+        var role = User.FindFirstValue(AppClaimTypes.Role);
         var status = User.FindFirstValue("status");
 
         return Ok(new

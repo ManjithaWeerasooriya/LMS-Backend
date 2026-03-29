@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using LMS_Backend.Infrastructure.Auth;
 using LMS_Backend.Models.DTOs.Common;
 using LMS_Backend.Models.DTOs.Courses;
 using LMS_Backend.Services;
@@ -10,7 +11,7 @@ namespace LMS_Backend.Controllers;
 
 [ApiController]
 [Route("api/v1/admin/courses")]
-[Authorize(Roles = "Admin")]
+[Authorize(Policy = AppPolicies.TeacherOnly)]
 public class AdminCoursesController : ControllerBase
 {
     private readonly CourseService _courseService;
@@ -27,39 +28,39 @@ public class AdminCoursesController : ControllerBase
         [FromQuery] CourseQueryParametersDto query)
     {
         var options = query?.ToOptions() ?? new CourseQueryOptions();
-        var result = await _courseService.GetCoursesForAdminAsync(options);
+        var result = await _courseService.GetCoursesForManagementAsync(options);
         return Ok(result);
     }
 
     [HttpPut("{id:guid}/disable")]
     public async Task<IActionResult> DisableCourse(Guid id)
     {
-        var disabled = await _courseService.DisableCourseAdminAsync(id);
+        var disabled = await _courseService.ArchiveCourseAsync(id);
         if (!disabled)
         {
             return NotFound();
         }
 
-        LogAdminAction("archived", id);
+        LogTeacherAction("archived", id);
         return NoContent();
     }
 
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeleteCourse(Guid id)
     {
-        var deleted = await _courseService.DeleteCourseAdminAsync(id);
+        var deleted = await _courseService.DeleteCourseForManagementAsync(id);
         if (!deleted)
         {
             return NotFound();
         }
 
-        LogAdminAction("deleted", id);
+        LogTeacherAction("deleted", id);
         return NoContent();
     }
 
-    private void LogAdminAction(string action, Guid courseId)
+    private void LogTeacherAction(string action, Guid courseId)
     {
-        var adminId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "unknown";
-        _logger.LogInformation("Admin {AdminId} {Action} course {CourseId}.", adminId, action, courseId);
+        var teacherId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "unknown";
+        _logger.LogInformation("Teacher {TeacherId} {Action} course {CourseId}.", teacherId, action, courseId);
     }
 }

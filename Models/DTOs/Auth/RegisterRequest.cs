@@ -8,6 +8,6 @@ public class RegisterRequest
     public string? FirstName { get; set; }
     public string? LastName { get; set; }
 
-    // "Student" | "Teacher" | "Admin"
+    // "Student" | "Teacher"
     public required string Role { get; set; }
 }

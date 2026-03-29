@@ -1,3 +1,4 @@
+using LMS_Backend.Infrastructure.Auth;
 using LMS_Backend.Models.DTOs.Admin;
 using LMS_Backend.Models.Exceptions;
 using LMS_Backend.Services;
@@ -8,7 +9,7 @@ namespace LMS_Backend.Controllers;
 
 [ApiController]
 [Route("api/v1/admin")]
-[Authorize(Roles = "Admin")]
+[Authorize(Policy = AppPolicies.TeacherOnly)]
 public class AdminController : ControllerBase
 {
     private readonly AdminService _adminService;
@@ -19,7 +20,7 @@ public class AdminController : ControllerBase
     }
 
     /// <summary>
-    /// Returns a paginated list of users visible to administrators.
+    /// Returns a paginated list of users visible to teacher managers.
     /// </summary>
     /// <param name="query">Pagination and filtering options.</param>
     /// <returns>Paginated user collection.</returns>
@@ -31,7 +32,7 @@ public class AdminController : ControllerBase
     }
 
     /// <summary>
-    /// Suspends a user account (Admin only).
+    /// Suspends a user account (Teacher only).
     /// </summary>
     [HttpPatch("users/{id}/suspend")]
     public async Task<IActionResult> SuspendUser(string id, [FromBody] SuspendUserDto request)
@@ -67,7 +68,7 @@ public class AdminController : ControllerBase
     }
 
     /// <summary>
-    /// Reactivates a suspended user (Admin only).
+    /// Reactivates a suspended user (Teacher only).
     /// </summary>
     [HttpPatch("users/{id}/reactivate")]
     public async Task<IActionResult> ReactivateUser(string id)
@@ -75,48 +76,6 @@ public class AdminController : ControllerBase
         try
         {
             await _adminService.ReactivateUserAsync(id);
-            return NoContent();
-        }
-        catch (NotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
-    }
-
-    /// <summary>
-    /// Approves a pending teacher (Admin only).
-    /// </summary>
-    [HttpPatch("users/{id}/approve")]
-    public async Task<IActionResult> ApproveTeacher(string id)
-    {
-        try
-        {
-            await _adminService.ApproveTeacherAsync(id);
-            return NoContent();
-        }
-        catch (NotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
-    }
-
-    /// <summary>
-    /// Rejects a pending teacher (Admin only).
-    /// </summary>
-    [HttpPatch("users/{id}/reject")]
-    public async Task<IActionResult> RejectTeacher(string id)
-    {
-        try
-        {
-            await _adminService.RejectTeacherAsync(id);
             return NoContent();
         }
         catch (NotFoundException ex)

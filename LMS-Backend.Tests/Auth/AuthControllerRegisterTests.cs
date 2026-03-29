@@ -241,7 +241,7 @@ public class AuthControllerRegisterTests
     }
 
     [Fact]
-    public async Task Register_CreatesPendingTeacher_WhenRoleIsTeacher()
+    public async Task Register_CreatesActiveTeacher_WhenRoleIsTeacher()
     {
         var controller = CreateController();
 
@@ -276,8 +276,10 @@ public class AuthControllerRegisterTests
         var body = ok.Value!;
         var message = (string)body.GetType().GetProperty("message")!.GetValue(body)!;
         var role = (string)body.GetType().GetProperty("role")!.GetValue(body)!;
+        var status = (string)body.GetType().GetProperty("status")!.GetValue(body)!;
 
-        Assert.Equal("Registered. Waiting for admin approval.", message);
+        Assert.Equal("Registered successfully.", message);
         Assert.Equal("Teacher", role);
+        Assert.Equal("Active", status);
     }
 }

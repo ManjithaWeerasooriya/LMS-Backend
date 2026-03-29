@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using LMS_Backend.Infrastructure.Auth;
 using LMS_Backend.Models.DTOs.Courses;
 using LMS_Backend.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -8,7 +9,7 @@ namespace LMS_Backend.Controllers;
 
 [ApiController]
 [Route("api/v1/student/courses")]
-[Authorize(Roles = "Student")]
+[Authorize(Policy = AppPolicies.StudentOnly)]
 public class StudentCoursesController : ControllerBase
 {
     private readonly CourseService _courseService;
@@ -85,4 +86,3 @@ public class StudentCoursesController : ControllerBase
         };
     }
 }
-

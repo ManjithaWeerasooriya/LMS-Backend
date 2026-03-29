@@ -1,4 +1,5 @@
 using System.Linq;
+using LMS_Backend.Infrastructure.Auth;
 using LMS_Backend.Models.DTOs.Reports;
 using LMS_Backend.Services.Reporting;
 using Microsoft.AspNetCore.Authorization;
@@ -8,7 +9,7 @@ namespace LMS_Backend.Controllers;
 
 [ApiController]
 [Route("api/v1/admin/reports")]
-[Authorize(Roles = "Admin")]
+[Authorize(Policy = AppPolicies.TeacherOnly)]
 public class AdminReportsController : ControllerBase
 {
     private readonly IReportingService _reportingService;

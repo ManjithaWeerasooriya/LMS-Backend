@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using LMS_Backend.Data;
+using LMS_Backend.Infrastructure.Auth;
 using LMS_Backend.Models.Entities;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
@@ -31,7 +32,7 @@ public class TokenService
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
         var roles = await _userManager.GetRolesAsync(user);
-        var primaryRole = ResolvePrimaryRole(roles);
+        var primaryRole = AppRoles.ResolveSystemRole(roles);
 
         var claims = new List<Claim>
         {
@@ -44,17 +45,7 @@ public class TokenService
             new("AspNet.Identity.SecurityStamp", user.SecurityStamp ?? string.Empty)
         };
 
-        if (roles.Count == 0)
-        {
-            claims.Add(new Claim(ClaimTypes.Role, primaryRole));
-        }
-        else
-        {
-            foreach (var role in roles)
-            {
-                claims.Add(new Claim(ClaimTypes.Role, role));
-            }
-        }
+        claims.Add(new Claim(AppClaimTypes.Role, primaryRole));
 
         var minutes = int.Parse(jwt["AccessTokenMinutes"]!);
         var expires = DateTime.UtcNow.AddMinutes(minutes);
@@ -69,21 +60,6 @@ public class TokenService
 
         var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
         return (tokenString, minutes * 60);
-    }
-
-    private static string ResolvePrimaryRole(IList<string> roles)
-    {
-        if (roles.Count == 0)
-        {
-            return "Student";
-        }
-
-        if (roles.Any(r => string.Equals(r, "Admin", StringComparison.OrdinalIgnoreCase)))
-        {
-            return "Admin";
-        }
-
-        return roles.First();
     }
 
     public async Task<string> CreateAndStoreRefreshTokenAsync(User user)

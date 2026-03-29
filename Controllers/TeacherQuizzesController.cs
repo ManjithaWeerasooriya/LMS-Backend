@@ -1,5 +1,5 @@
-using System.Security.Claims;
-using LMS_Backend.Models.DTOs.Quizzes;
+using LMS_Backend.Infrastructure.Auth;
+using LMS_Backend.Models.DTOs.Quiz;
 using LMS_Backend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -8,53 +8,88 @@ namespace LMS_Backend.Controllers;
 
 [ApiController]
 [Route("api/v1/teacher/quizzes")]
-[Authorize(Roles = "Teacher")]
+[Authorize(Policy = AppPolicies.TeacherOnly)]
 public class TeacherQuizzesController : ControllerBase
 {
-    private readonly QuizService _quizService;
+    private readonly IQuizService _quizService;
 
-    public TeacherQuizzesController(QuizService quizService)
+    public TeacherQuizzesController(IQuizService quizService)
     {
         _quizService = quizService;
     }
 
-    [HttpGet]
-    public async Task<ActionResult<IEnumerable<QuizListItemDto>>> GetMyQuizzes(
-        CancellationToken cancellationToken)
+    [HttpGet("course/{courseId:guid}")]
+    public async Task<ActionResult<IEnumerable<QuizResponseDto>>> GetQuizzesByCourse(
+        Guid courseId)
     {
-        var teacherId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrWhiteSpace(teacherId))
-        {
-            return Unauthorized();
-        }
-
-        var quizzes = await _quizService.GetQuizzesForTeacherAsync(teacherId, cancellationToken);
+        var quizzes = await _quizService.GetQuizzesByCourseAsync(courseId);
         return Ok(quizzes);
     }
 
+    [HttpGet("{quizId:guid}")]
+    public async Task<ActionResult<QuizResponseDto>> GetQuizById(Guid quizId)
+    {
+        var quiz = await _quizService.GetQuizByIdAsync(quizId);
+        if (quiz == null)
+        {
+            return NotFound(new { message = "Quiz not found." });
+        }
+
+        return Ok(quiz);
+    }
+
     [HttpPost]
-    public async Task<IActionResult> CreateQuiz(
-        [FromBody] CreateQuizRequestDto dto,
-        CancellationToken cancellationToken)
+    public async Task<IActionResult> CreateQuiz([FromBody] CreateQuizDto dto)
     {
         if (!ModelState.IsValid)
         {
             return ValidationProblem(ModelState);
         }
 
-        var teacherId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrWhiteSpace(teacherId))
+        try
         {
-            return Unauthorized();
+            var quiz = await _quizService.CreateQuizAsync(dto);
+            return CreatedAtAction(nameof(GetQuizById), new { quizId = quiz.Id }, quiz);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpPut("{quizId:guid}")]
+    public async Task<IActionResult> UpdateQuiz(Guid quizId, [FromBody] UpdateQuizDto dto)
+    {
+        if (!ModelState.IsValid)
+        {
+            return ValidationProblem(ModelState);
         }
 
-        var quiz = await _quizService.CreateQuizAsync(teacherId, dto, cancellationToken);
-        if (quiz == null)
+        try
         {
-            return BadRequest(new { message = "Invalid course for this teacher." });
+            var quiz = await _quizService.UpdateQuizAsync(quizId, dto);
+            if (quiz == null)
+            {
+                return NotFound(new { message = "Quiz not found." });
+            }
+
+            return Ok(quiz);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpDelete("{quizId:guid}")]
+    public async Task<IActionResult> DeleteQuiz(Guid quizId)
+    {
+        var deleted = await _quizService.DeleteQuizAsync(quizId);
+        if (!deleted)
+        {
+            return NotFound(new { message = "Quiz not found." });
         }
 
-        return CreatedAtAction(nameof(GetMyQuizzes), new { id = quiz.Id }, new { quiz.Id });
+        return Ok(new { message = "Quiz deleted successfully." });
     }
 }
-

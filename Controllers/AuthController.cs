@@ -1,5 +1,6 @@
 using LMS_Backend.Models.DTOs.Auth;
 using LMS_Backend.Models.Entities;
+using LMS_Backend.Infrastructure.Auth;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using LMS_Backend.Services;
@@ -41,16 +42,10 @@ public class AuthController : ControllerBase
     [HttpPost("register")]
     public async Task<IActionResult> Register([FromBody] RegisterRequest req)
     {
-        var requestedRole = req.Role?.Trim();
-        if (string.IsNullOrWhiteSpace(requestedRole))
+        if (!AppRoles.TryNormalizeRequestedRole(req.Role, out var normalizedRole))
+        {
             return BadRequest(new { message = "Role must be Student or Teacher." });
-
-        var isStudent = string.Equals(requestedRole, "Student", StringComparison.OrdinalIgnoreCase);
-        var isTeacher = string.Equals(requestedRole, "Teacher", StringComparison.OrdinalIgnoreCase);
-        if (!isStudent && !isTeacher)
-            return BadRequest(new { message = "Role must be Student or Teacher." });
-
-        var normalizedRole = isTeacher ? "Teacher" : "Student";
+        }
 
         // Check email uniqueness
         var existing = await _userManager.FindByEmailAsync(req.Email);
@@ -63,7 +58,7 @@ public class AuthController : ControllerBase
             Email = req.Email,
             FirstName = req.FirstName,
             LastName = req.LastName,
-            Status = isTeacher ? UserStatus.Pending : UserStatus.Active,
+            Status = UserStatus.Active,
             Phone = null,
             CreatedAt = DateTime.UtcNow
         };
@@ -112,9 +107,7 @@ public class AuthController : ControllerBase
 
         return Ok(new
         {
-            message = isTeacher
-                ? "Registered. Waiting for admin approval."
-                : "Registered successfully.",
+            message = "Registered successfully.",
             userId = user.Id,
             status = user.Status.ToString(),
             role = normalizedRole
@@ -134,10 +127,6 @@ public class AuthController : ControllerBase
         if (!user.EmailConfirmed)
             return Unauthorized(new { message = "Please verify your email before logging in." });
 
-        // Existing rule still applies:
-        if (user.Status != UserStatus.Active)
-            return Unauthorized(new { message = $"User is {user.Status}." });    
-
         var result = await _signInManager.CheckPasswordSignInAsync(user, req.Password, lockoutOnFailure: true);
         if (!result.Succeeded)
             return Unauthorized(new { message = "Invalid credentials." });
@@ -146,9 +135,7 @@ public class AuthController : ControllerBase
         await _userManager.UpdateAsync(user);
 
         var roles = await _userManager.GetRolesAsync(user);
-        var role = roles.Any(r => string.Equals(r, "Admin", StringComparison.OrdinalIgnoreCase))
-            ? "Admin"
-            : roles.FirstOrDefault() ?? "Student";
+        var role = AppRoles.ResolveSystemRole(roles);
 
         var (accessToken, expiresIn) = await _tokenService.CreateAccessTokenAsync(user);
 
@@ -182,7 +169,7 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = "Invalid refresh token." });
 
         var roles = await _userManager.GetRolesAsync(user);
-        var role = roles.FirstOrDefault() ?? "Student";
+        var role = AppRoles.ResolveSystemRole(roles);
 
         var (accessToken, expiresIn) = await _tokenService.CreateAccessTokenAsync(user);
 
@@ -226,7 +213,7 @@ public class AuthController : ControllerBase
         if (!result.Succeeded)
             return BadRequest(new { message = "Email verification failed.", errors = result.Errors.Select(e => e.Description) });
 
-        return Ok(new { message = "Email verified successfully. You can now login (teachers still require admin approval)." });
+        return Ok(new { message = "Email verified successfully. You can now login." });
     }
 
     [HttpPost("resend-verification")]

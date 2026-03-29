@@ -30,7 +30,7 @@ public class AdminService
     }
 
     /// <summary>
-    /// Retrieves a paginated list of users filtered by role and status for admin dashboards.
+    /// Retrieves a paginated list of users filtered by role and status for teacher management dashboards.
     /// </summary>
     /// <param name="query">Pagination and filtering parameters.</param>
     /// <returns>Paged user information.</returns>
@@ -124,25 +124,20 @@ public class AdminService
             throw new NotFoundException($"User '{userId}' was not found.");
         }
 
-        var actingAdminId = GetCurrentUserId();
-        if (string.IsNullOrWhiteSpace(actingAdminId))
+        var actingTeacherId = GetCurrentUserId();
+        if (string.IsNullOrWhiteSpace(actingTeacherId))
         {
-            throw new InvalidOperationException("Unable to determine the acting administrator.");
+            throw new InvalidOperationException("Unable to determine the acting teacher.");
         }
 
-        if (targetUser.Id == actingAdminId)
+        if (targetUser.Id == actingTeacherId)
         {
-            throw new InvalidOperationException("Administrators cannot suspend their own accounts.");
-        }
-
-        if (await _userManager.IsInRoleAsync(targetUser, "Admin"))
-        {
-            throw new InvalidOperationException("Administrators cannot suspend other administrators.");
+            throw new InvalidOperationException("Teachers cannot suspend their own accounts.");
         }
 
         if (targetUser.Status == UserStatus.Suspended)
         {
-            _logger.LogInformation("Admin {AdminId} attempted to suspend user {UserId} who is already suspended.", actingAdminId, targetUser.Id);
+            _logger.LogInformation("Teacher {TeacherId} attempted to suspend user {UserId} who is already suspended.", actingTeacherId, targetUser.Id);
             return;
         }
 
@@ -154,7 +149,7 @@ public class AdminService
             throw new InvalidOperationException($"Failed to suspend user '{targetUser.Email}': {errors}");
         }
 
-        _logger.LogInformation("Admin {AdminId} suspended user {UserId}. Reason: {Reason}", actingAdminId, targetUser.Id, reason ?? "n/a");
+        _logger.LogInformation("Teacher {TeacherId} suspended user {UserId}. Reason: {Reason}", actingTeacherId, targetUser.Id, reason ?? "n/a");
     }
 
     public async Task ReactivateUserAsync(string userId)
@@ -183,72 +178,10 @@ public class AdminService
             throw new InvalidOperationException($"Failed to reactivate user '{targetUser.Email}': {errors}");
         }
 
-        var actingAdminId = GetCurrentUserId();
-        if (!string.IsNullOrWhiteSpace(actingAdminId))
+        var actingTeacherId = GetCurrentUserId();
+        if (!string.IsNullOrWhiteSpace(actingTeacherId))
         {
-            _logger.LogInformation("Admin {AdminId} reactivated user {UserId}.", actingAdminId, targetUser.Id);
-        }
-    }
-
-    public async Task ApproveTeacherAsync(string userId)
-    {
-        var targetUser = await GetPendingTeacherAsync(userId);
-        targetUser.Status = UserStatus.Active;
-        await PersistStatusChangeAsync(targetUser, $"approve teacher '{targetUser.Email}'");
-
-        var actingAdminId = GetCurrentUserId();
-        if (!string.IsNullOrWhiteSpace(actingAdminId))
-        {
-            _logger.LogInformation("Admin {AdminId} approved teacher {TeacherId}.", actingAdminId, targetUser.Id);
-        }
-    }
-
-    public async Task RejectTeacherAsync(string userId)
-    {
-        var targetUser = await GetPendingTeacherAsync(userId);
-        targetUser.Status = UserStatus.Suspended;
-        await PersistStatusChangeAsync(targetUser, $"reject teacher '{targetUser.Email}'");
-
-        var actingAdminId = GetCurrentUserId();
-        if (!string.IsNullOrWhiteSpace(actingAdminId))
-        {
-            _logger.LogInformation("Admin {AdminId} rejected teacher {TeacherId}.", actingAdminId, targetUser.Id);
-        }
-    }
-
-    private async Task<User> GetPendingTeacherAsync(string userId)
-    {
-        if (string.IsNullOrWhiteSpace(userId))
-        {
-            throw new ArgumentException("User id is required.", nameof(userId));
-        }
-
-        var targetUser = await _userManager.FindByIdAsync(userId);
-        if (targetUser == null)
-        {
-            throw new NotFoundException($"User '{userId}' was not found.");
-        }
-
-        if (!await _userManager.IsInRoleAsync(targetUser, "Teacher"))
-        {
-            throw new InvalidOperationException("Only teacher accounts can be approved or rejected.");
-        }
-
-        if (targetUser.Status != UserStatus.Pending)
-        {
-            throw new InvalidOperationException("Teacher must be in pending status to approve or reject.");
-        }
-
-        return targetUser;
-    }
-
-    private async Task PersistStatusChangeAsync(User user, string actionDescription)
-    {
-        var result = await _userManager.UpdateAsync(user);
-        if (!result.Succeeded)
-        {
-            var errors = string.Join(", ", result.Errors.Select(e => e.Description));
-            throw new InvalidOperationException($"Failed to {actionDescription}: {errors}");
+            _logger.LogInformation("Teacher {TeacherId} reactivated user {UserId}.", actingTeacherId, targetUser.Id);
         }
     }
 

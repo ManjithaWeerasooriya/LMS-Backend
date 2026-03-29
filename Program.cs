@@ -1,8 +1,10 @@
+using System.Security.Claims;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
 using LMS_Backend.Data;
+using LMS_Backend.Infrastructure.Auth;
 using LMS_Backend.Infrastructure.Seed;
 using LMS_Backend.Models.Entities;
 using LMS_Backend.Services;
@@ -25,6 +27,7 @@ var builder = WebApplication.CreateBuilder(filteredArgs);
 builder.Services.AddControllers();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IPublicService, PublicService>();
+builder.Services.AddScoped<IQuizService, QuizService>();
 
 // CORS
 builder.Services.AddCors(options =>
@@ -85,18 +88,23 @@ builder.Services.AddAuthentication(options =>
         ValidIssuer = jwt["Issuer"],
         ValidAudience = jwt["Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(keyBytes),
+        NameClaimType = ClaimTypes.Name,
+        RoleClaimType = ClaimTypes.Role,
         ClockSkew = TimeSpan.FromSeconds(30)
     };
 });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(AppPolicies.TeacherOnly, policy => policy.RequireRole(AppRoles.Teacher));
+    options.AddPolicy(AppPolicies.StudentOnly, policy => policy.RequireRole(AppRoles.Student));
+});
 
 // Services
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<TeacherDashboardService>();
 builder.Services.AddScoped<CourseService>();
-builder.Services.AddScoped<QuizService>();
 builder.Services.AddScoped<LiveClassService>();
 builder.Services.AddScoped<StudentDashboardService>();
 builder.Services.AddScoped<IReportingService, ReportingService>();
