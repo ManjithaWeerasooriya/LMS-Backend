@@ -1,3 +1,4 @@
+using LMS_Backend.Infrastructure.Auth;
 using LMS_Backend.Models.Entities;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
@@ -7,12 +8,12 @@ using Microsoft.Extensions.Logging;
 namespace LMS_Backend.Infrastructure.Seed;
 
 /// <summary>
-/// Seeds the bootstrap admin user and role in an idempotent, environment-aware manner.
+/// Seeds the bootstrap teacher user and role in an idempotent, environment-aware manner.
 /// </summary>
 public class IdentitySeeder
 {
-    private const string AdminRole = "Admin";
-    private const string ConfigSection = "AdminBootstrap";
+    private const string ConfigSection = "TeacherBootstrap";
+    private const string LegacyConfigSection = "AdminBootstrap";
 
     private readonly UserManager<User> _userManager;
     private readonly RoleManager<IdentityRole> _roleManager;
@@ -35,102 +36,104 @@ public class IdentitySeeder
     }
 
     /// <summary>
-    /// Ensures the Admin role and default admin user exist.
+    /// Ensures the Teacher role and bootstrap teacher user exist.
     /// </summary>
     public async Task SeedAsync()
     {
-        var adminEmail = _configuration[$"{ConfigSection}:Email"]?.Trim();
-        var adminPassword = _configuration[$"{ConfigSection}:Password"]?.Trim();
+        await EnsureTeacherRoleExistsAsync();
+        await NormalizeLegacyAdminUsersAsync();
+        await NormalizeLegacyPendingUsersAsync();
 
-        if (string.IsNullOrWhiteSpace(adminEmail))
+        var bootstrapEmail = GetBootstrapSetting("Email");
+        var bootstrapPassword = GetBootstrapSetting("Password");
+
+        if (string.IsNullOrWhiteSpace(bootstrapEmail))
         {
-            _logger.LogWarning("Admin bootstrap email is not configured; skipping identity seeding.");
+            _logger.LogWarning("Teacher bootstrap email is not configured; skipping bootstrap identity seeding.");
             return;
         }
 
-        await EnsureRoleExistsAsync();
-
-        var adminUser = await _userManager.FindByEmailAsync(adminEmail);
-        if (adminUser == null)
+        var bootstrapUser = await _userManager.FindByEmailAsync(bootstrapEmail);
+        if (bootstrapUser == null)
         {
-            if (string.IsNullOrWhiteSpace(adminPassword))
+            if (string.IsNullOrWhiteSpace(bootstrapPassword))
             {
                 var level = _environment.IsProduction() ? LogLevel.Warning : LogLevel.Information;
                 _logger.Log(level,
-                    "Admin bootstrap password is not configured; cannot create admin user in {EnvironmentName}.",
+                    "Teacher bootstrap password is not configured; cannot create bootstrap teacher in {EnvironmentName}.",
                     _environment.EnvironmentName);
                 return;
             }
 
-            adminUser = new User
+            bootstrapUser = new User
             {
-                UserName = adminEmail,
-                Email = adminEmail,
+                UserName = bootstrapEmail,
+                Email = bootstrapEmail,
                 FirstName = "System",
-                LastName = "Admin",
+                LastName = "Teacher",
                 Status = UserStatus.Active,
                 EmailConfirmed = true,
                 CreatedAt = DateTime.UtcNow
             };
 
-            var createResult = await _userManager.CreateAsync(adminUser, adminPassword);
+            var createResult = await _userManager.CreateAsync(bootstrapUser, bootstrapPassword);
             if (!createResult.Succeeded)
             {
                 var errors = string.Join(", ", createResult.Errors.Select(e => e.Description));
-                _logger.LogError("Failed to create admin user {Email}: {Errors}", adminEmail, errors);
-                throw new InvalidOperationException($"Failed to create admin user: {errors}");
+                _logger.LogError("Failed to create bootstrap teacher {Email}: {Errors}", bootstrapEmail, errors);
+                throw new InvalidOperationException($"Failed to create bootstrap teacher: {errors}");
             }
 
-            _logger.LogInformation("Created bootstrap admin user {Email} in {EnvironmentName}.", adminEmail, _environment.EnvironmentName);
+            _logger.LogInformation("Created bootstrap teacher {Email} in {EnvironmentName}.", bootstrapEmail, _environment.EnvironmentName);
         }
         else
         {
-            var updated = await EnsureAdminUserStateAsync(adminUser);
+            var updated = await EnsureBootstrapTeacherStateAsync(bootstrapUser);
             if (updated)
             {
-                _logger.LogInformation("Updated bootstrap admin user {Email} to ensure it stays active and confirmed.", adminEmail);
+                _logger.LogInformation("Updated bootstrap teacher {Email} to ensure it stays active and confirmed.", bootstrapEmail);
             }
             else
             {
-                _logger.LogInformation("Bootstrap admin user {Email} already exists.", adminEmail);
+                _logger.LogInformation("Bootstrap teacher {Email} already exists.", bootstrapEmail);
             }
         }
 
-        await EnsureUserInRoleAsync(adminUser);
+        await EnsureUserInTeacherRoleAsync(bootstrapUser);
     }
 
-    private async Task EnsureRoleExistsAsync()
+    private async Task EnsureTeacherRoleExistsAsync()
     {
-        if (await _roleManager.RoleExistsAsync(AdminRole))
+        if (await _roleManager.RoleExistsAsync(AppRoles.Teacher))
         {
-            _logger.LogInformation("Role '{Role}' already exists.", AdminRole);
+            _logger.LogInformation("Role '{Role}' already exists.", AppRoles.Teacher);
             return;
         }
 
-        var roleResult = await _roleManager.CreateAsync(new IdentityRole(AdminRole));
+        var roleResult = await _roleManager.CreateAsync(new IdentityRole(AppRoles.Teacher));
         if (!roleResult.Succeeded)
         {
             var errors = string.Join(", ", roleResult.Errors.Select(e => e.Description));
-            _logger.LogError("Failed to create role '{Role}': {Errors}", AdminRole, errors);
-            throw new InvalidOperationException($"Failed to create '{AdminRole}' role: {errors}");
+            _logger.LogError("Failed to create role '{Role}': {Errors}", AppRoles.Teacher, errors);
+            throw new InvalidOperationException($"Failed to create '{AppRoles.Teacher}' role: {errors}");
         }
 
-        _logger.LogInformation("Created role '{Role}'.", AdminRole);
+        _logger.LogInformation("Created role '{Role}'.", AppRoles.Teacher);
     }
 
-    private async Task<bool> EnsureAdminUserStateAsync(User adminUser)
+    private async Task<bool> EnsureBootstrapTeacherStateAsync(User bootstrapUser)
     {
         var changed = false;
 
-        if (adminUser.Status != UserStatus.Active)
+        if (bootstrapUser.Status != UserStatus.Active)
         {
-            adminUser.Status = UserStatus.Active;
+            bootstrapUser.Status = UserStatus.Active;
             changed = true;
         }
 
-        if (!adminUser.EmailConfirmed)
+        if (!bootstrapUser.EmailConfirmed)
         {
-            adminUser.EmailConfirmed = true;
+            bootstrapUser.EmailConfirmed = true;
             changed = true;
         }
 
@@ -139,33 +142,118 @@ public class IdentitySeeder
             return false;
         }
 
-        var updateResult = await _userManager.UpdateAsync(adminUser);
+        var updateResult = await _userManager.UpdateAsync(bootstrapUser);
         if (!updateResult.Succeeded)
         {
             var errors = string.Join(", ", updateResult.Errors.Select(e => e.Description));
-            _logger.LogError("Failed to update admin user {Email}: {Errors}", adminUser.Email, errors);
-            throw new InvalidOperationException($"Failed to update admin user: {errors}");
+            _logger.LogError("Failed to update bootstrap teacher {Email}: {Errors}", bootstrapUser.Email, errors);
+            throw new InvalidOperationException($"Failed to update bootstrap teacher: {errors}");
         }
 
         return true;
     }
 
-    private async Task EnsureUserInRoleAsync(User adminUser)
+    private async Task EnsureUserInTeacherRoleAsync(User bootstrapUser)
     {
-        if (await _userManager.IsInRoleAsync(adminUser, AdminRole))
+        if (await _userManager.IsInRoleAsync(bootstrapUser, AppRoles.Teacher))
         {
-            _logger.LogInformation("Admin user {Email} already in role '{Role}'.", adminUser.Email, AdminRole);
+            await RemoveLegacyAdminRoleAsync(bootstrapUser);
+            _logger.LogInformation("Bootstrap teacher {Email} already in role '{Role}'.", bootstrapUser.Email, AppRoles.Teacher);
+        }
+        else
+        {
+            var assignResult = await _userManager.AddToRoleAsync(bootstrapUser, AppRoles.Teacher);
+            if (!assignResult.Succeeded)
+            {
+                var errors = string.Join(", ", assignResult.Errors.Select(e => e.Description));
+                _logger.LogError("Failed to assign role '{Role}' to {Email}: {Errors}", AppRoles.Teacher, bootstrapUser.Email, errors);
+                throw new InvalidOperationException($"Failed to assign '{AppRoles.Teacher}' role: {errors}");
+            }
+
+            _logger.LogInformation("Ensured bootstrap teacher {Email} has role '{Role}'.", bootstrapUser.Email, AppRoles.Teacher);
+        }
+
+        await RemoveLegacyAdminRoleAsync(bootstrapUser);
+    }
+
+    private async Task NormalizeLegacyAdminUsersAsync()
+    {
+        if (!await _roleManager.RoleExistsAsync(AppRoles.LegacyAdmin))
+        {
             return;
         }
 
-        var assignResult = await _userManager.AddToRoleAsync(adminUser, AdminRole);
-        if (!assignResult.Succeeded)
+        var legacyAdmins = await _userManager.GetUsersInRoleAsync(AppRoles.LegacyAdmin);
+        foreach (var legacyAdmin in legacyAdmins)
         {
-            var errors = string.Join(", ", assignResult.Errors.Select(e => e.Description));
-            _logger.LogError("Failed to assign role '{Role}' to {Email}: {Errors}", AdminRole, adminUser.Email, errors);
-            throw new InvalidOperationException($"Failed to assign '{AdminRole}' role: {errors}");
+            if (!await _userManager.IsInRoleAsync(legacyAdmin, AppRoles.Teacher))
+            {
+                var addTeacherResult = await _userManager.AddToRoleAsync(legacyAdmin, AppRoles.Teacher);
+                if (!addTeacherResult.Succeeded)
+                {
+                    var errors = string.Join(", ", addTeacherResult.Errors.Select(e => e.Description));
+                    throw new InvalidOperationException($"Failed to migrate legacy admin '{legacyAdmin.Email}' to Teacher role: {errors}");
+                }
+            }
+
+            await RemoveLegacyAdminRoleAsync(legacyAdmin);
         }
 
-        _logger.LogInformation("Ensured admin user {Email} has role '{Role}'.", adminUser.Email, AdminRole);
+        var adminRole = await _roleManager.FindByNameAsync(AppRoles.LegacyAdmin);
+        if (adminRole != null)
+        {
+            var deleteRoleResult = await _roleManager.DeleteAsync(adminRole);
+            if (!deleteRoleResult.Succeeded)
+            {
+                var errors = string.Join(", ", deleteRoleResult.Errors.Select(e => e.Description));
+                throw new InvalidOperationException($"Failed to delete legacy '{AppRoles.LegacyAdmin}' role: {errors}");
+            }
+        }
+    }
+
+    private async Task NormalizeLegacyPendingUsersAsync()
+    {
+        var legacyPendingStatus = (UserStatus)2;
+        var pendingUsers = _userManager.Users
+            .Where(user => user.Status == legacyPendingStatus)
+            .ToList();
+
+        foreach (var pendingUser in pendingUsers)
+        {
+            pendingUser.Status = UserStatus.Active;
+
+            var updateResult = await _userManager.UpdateAsync(pendingUser);
+            if (!updateResult.Succeeded)
+            {
+                var errors = string.Join(", ", updateResult.Errors.Select(e => e.Description));
+                throw new InvalidOperationException($"Failed to activate legacy pending user '{pendingUser.Email}': {errors}");
+            }
+        }
+    }
+
+    private string? GetBootstrapSetting(string name)
+    {
+        var preferred = _configuration[$"{ConfigSection}:{name}"]?.Trim();
+        if (!string.IsNullOrWhiteSpace(preferred))
+        {
+            return preferred;
+        }
+
+        return _configuration[$"{LegacyConfigSection}:{name}"]?.Trim();
+    }
+
+    private async Task RemoveLegacyAdminRoleAsync(User user)
+    {
+        if (!await _userManager.IsInRoleAsync(user, AppRoles.LegacyAdmin))
+        {
+            return;
+        }
+
+        var removeResult = await _userManager.RemoveFromRoleAsync(user, AppRoles.LegacyAdmin);
+        if (!removeResult.Succeeded)
+        {
+            var errors = string.Join(", ", removeResult.Errors.Select(e => e.Description));
+            throw new InvalidOperationException($"Failed to remove legacy '{AppRoles.LegacyAdmin}' role from '{user.Email}': {errors}");
+        }
     }
 }

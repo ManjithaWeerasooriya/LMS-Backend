@@ -27,7 +27,7 @@ Backend services for the LMS project built with ASP.NET Core and Entity Framewor
   ```bash
   RUN_UI_TESTS=true LMS_UI_BASE_URL=http://localhost:3000 dotnet test LMS-Backend.Tests/LMS-Backend.Tests.csproj --filter "FullyQualifiedName~LMS_Backend.Tests.UI"
   ```
-- The current UI coverage includes login page validation and admin login flow checks. Ensure the frontend test environment has the expected admin account if you run the admin login test.
+- The current UI coverage includes login page validation and privileged-teacher login flow checks. Ensure the frontend test environment has the expected teacher account if you run that UI test.
 
 ### Change Environment Profile
 - `dotnet run` without flags loads the profile named `http` from `Properties/launchSettings.json`, which sets `ASPNETCORE_ENVIRONMENT=Development`. Use this for local Docker + dev DB testing.

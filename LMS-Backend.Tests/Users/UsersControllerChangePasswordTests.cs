@@ -161,7 +161,7 @@ public class UsersControllerChangePasswordTests
         var user = new User
         {
             Id = "user-id",
-            Status = UserStatus.Pending
+            Status = UserStatus.Suspended
         };
 
         _userManagerMock

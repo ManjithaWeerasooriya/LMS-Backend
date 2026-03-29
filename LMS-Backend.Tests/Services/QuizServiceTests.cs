@@ -9,6 +9,14 @@ namespace LMS_Backend.Tests.Services;
 
 public class QuizServiceTests
 {
+    private static Course CreateCourse(string title) => new()
+    {
+        Id = Guid.NewGuid(),
+        Title = title,
+        TeacherId = "teacher-1",
+        Status = CourseStatus.Active
+    };
+
     private static ApplicationDBContext GetDbContext()
     {
         var options = new DbContextOptionsBuilder<ApplicationDBContext>()
@@ -24,11 +32,7 @@ public class QuizServiceTests
         // Arrange
         var context = GetDbContext();
 
-        var course = new Course
-        {
-            Id = Guid.NewGuid(),
-            Title = "English Basics"
-        };
+        var course = CreateCourse("English Basics");
 
         context.Courses.Add(course);
         await context.SaveChangesAsync();
@@ -90,11 +94,7 @@ public class QuizServiceTests
         // Arrange
         var context = GetDbContext();
 
-        var course = new Course
-        {
-            Id = Guid.NewGuid(),
-            Title = "English Basics"
-        };
+        var course = CreateCourse("English Basics");
 
         context.Courses.Add(course);
         await context.SaveChangesAsync();
@@ -124,8 +124,8 @@ public class QuizServiceTests
         // Arrange
         var context = GetDbContext();
 
-        var course1 = new Course { Id = Guid.NewGuid(), Title = "Course 1" };
-        var course2 = new Course { Id = Guid.NewGuid(), Title = "Course 2" };
+        var course1 = CreateCourse("Course 1");
+        var course2 = CreateCourse("Course 2");
 
         context.Courses.AddRange(course1, course2);
 
