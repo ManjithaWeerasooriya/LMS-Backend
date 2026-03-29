@@ -25,6 +25,7 @@ var builder = WebApplication.CreateBuilder(filteredArgs);
 builder.Services.AddControllers();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IPublicService, PublicService>();
+builder.Services.AddScoped<IQuizService, QuizService>();
 
 // CORS
 builder.Services.AddCors(options =>
@@ -96,7 +97,6 @@ builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<TeacherDashboardService>();
 builder.Services.AddScoped<CourseService>();
-builder.Services.AddScoped<QuizService>();
 builder.Services.AddScoped<LiveClassService>();
 builder.Services.AddScoped<StudentDashboardService>();
 builder.Services.AddScoped<IReportingService, ReportingService>();
