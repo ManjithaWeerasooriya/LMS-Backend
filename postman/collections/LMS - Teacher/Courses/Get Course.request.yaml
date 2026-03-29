@@ -1,0 +1,5 @@
+$kind: http-request
+name: Get Course
+method: GET
+url: '{{baseUrl}}/api/v1/teacher/courses/{{courseId}}'
+order: 2000

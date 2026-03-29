@@ -1,0 +1,5 @@
+$kind: http-request
+name: Start Quiz Attempt
+method: POST
+url: '{{baseUrl}}/api/v1/student/quizzes/{{quizId}}/attempts'
+order: 3000

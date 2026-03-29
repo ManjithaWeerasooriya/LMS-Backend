@@ -1,0 +1,17 @@
+$kind: http-request
+name: Create Course
+method: POST
+url: '{{baseUrl}}/api/v1/teacher/courses'
+order: 3000
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "title": "New Course Title",
+      "description": "Course description here",
+      "category": "Programming",
+      "level": "Beginner"
+    }

@@ -28,7 +28,5 @@ LMS-Backend.Tests/TestResults/
 .env
 .env.*
 
-# Postman collection
-.postman
-postman
+
 

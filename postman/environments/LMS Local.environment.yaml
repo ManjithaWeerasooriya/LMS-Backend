@@ -1,0 +1,29 @@
+name: LMS Local
+values:
+  - key: baseUrl
+    value: 'http://localhost:5251'
+    enabled: true
+  - key: email
+    value: student@example.com
+    enabled: true
+  - key: password
+    value: Password123!
+    enabled: true
+  - key: deviceId
+    value: postman-device-1
+    enabled: true
+  - key: accessToken
+    value: ''
+    enabled: true
+  - key: refreshToken
+    value: ''
+    enabled: true
+  - key: courseId
+    value: ''
+    enabled: true
+  - key: quizId
+    value: ''
+    enabled: true
+  - key: userId
+    value: ''
+    enabled: true

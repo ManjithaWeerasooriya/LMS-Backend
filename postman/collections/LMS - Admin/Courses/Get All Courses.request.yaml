@@ -1,0 +1,18 @@
+$kind: http-request
+name: Get All Courses
+method: GET
+url: '{{baseUrl}}/api/v1/admin/courses'
+order: 1000
+queryParams:
+  - key: search
+    value: ''
+    disabled: true
+  - key: status
+    value: ''
+    disabled: true
+  - key: page
+    value: '1'
+    disabled: true
+  - key: pageSize
+    value: '20'
+    disabled: true

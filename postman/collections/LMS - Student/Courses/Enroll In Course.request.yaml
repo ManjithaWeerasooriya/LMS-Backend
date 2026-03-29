@@ -1,0 +1,8 @@
+$kind: http-request
+name: Enroll In Course
+method: POST
+url: '{{baseUrl}}/api/v1/student/courses/{{courseId}}/enroll'
+order: 3000
+headers:
+  - key: Content-Type
+    value: application/json

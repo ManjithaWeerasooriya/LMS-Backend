@@ -1,0 +1,5 @@
+$kind: http-request
+name: Delete Quiz
+method: DELETE
+url: '{{baseUrl}}/api/v1/teacher/quizzes/{{quizId}}'
+order: 5000

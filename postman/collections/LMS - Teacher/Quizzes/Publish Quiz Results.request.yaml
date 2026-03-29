@@ -1,0 +1,5 @@
+$kind: http-request
+name: Publish Quiz Results
+method: POST
+url: '{{baseUrl}}/api/v1/teacher/quizzes/{{quizId}}/results/publish'
+order: 6000

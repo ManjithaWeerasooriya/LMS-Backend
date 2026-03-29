@@ -1,0 +1,5 @@
+$kind: http-request
+name: Get Dashboard
+method: GET
+url: '{{baseUrl}}/api/v1/teacher/dashboard'
+order: 1000

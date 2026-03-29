@@ -1,0 +1,6 @@
+$kind: collection
+name: LMS - Auth
+auth:
+  type: bearer
+  credentials:
+    token: "{{accessToken}}"

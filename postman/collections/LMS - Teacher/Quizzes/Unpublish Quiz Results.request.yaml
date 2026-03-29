@@ -1,0 +1,5 @@
+$kind: http-request
+name: Unpublish Quiz Results
+method: POST
+url: '{{baseUrl}}/api/v1/teacher/quizzes/{{quizId}}/results/unpublish'
+order: 7000

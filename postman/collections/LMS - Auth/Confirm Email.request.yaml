@@ -1,0 +1,10 @@
+$kind: http-request
+name: Confirm Email
+method: GET
+url: '{{baseUrl}}/api/v1/auth/confirm-email'
+order: 5000
+queryParams:
+  - key: userId
+    value: '{{userId}}'
+  - key: token
+    value: ''

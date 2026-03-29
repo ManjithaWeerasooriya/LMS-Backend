@@ -1,0 +1,5 @@
+$kind: http-request
+name: Get Platform Stats
+method: GET
+url: '{{baseUrl}}/api/public/stats'
+order: 1000

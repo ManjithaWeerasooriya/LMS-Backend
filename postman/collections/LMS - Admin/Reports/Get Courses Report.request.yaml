@@ -1,0 +1,12 @@
+$kind: http-request
+name: Get Courses Report
+method: GET
+url: '{{baseUrl}}/api/v1/admin/reports/courses'
+order: 2000
+queryParams:
+  - key: from
+    value: ''
+    disabled: true
+  - key: to
+    value: ''
+    disabled: true

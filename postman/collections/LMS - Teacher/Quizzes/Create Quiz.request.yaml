@@ -1,0 +1,24 @@
+$kind: http-request
+name: Create Quiz
+method: POST
+url: '{{baseUrl}}/api/v1/teacher/quizzes'
+order: 3000
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "courseId": "{{courseId}}",
+      "title": "Quiz 1",
+      "description": "Quiz covering the first module",
+      "durationMinutes": 30,
+      "startTimeUtc": "2026-03-30T08:00:00Z",
+      "endTimeUtc": "2026-03-30T10:00:00Z",
+      "totalMarks": 100,
+      "randomizeQuestions": false,
+      "allowMultipleAttempts": false,
+      "isPublished": true,
+      "areResultsPublished": false
+    }
