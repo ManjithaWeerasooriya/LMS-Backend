@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using LMS_Backend.Infrastructure.Auth;
 using LMS_Backend.Models.DTOs.Student;
 using LMS_Backend.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -8,7 +9,7 @@ namespace LMS_Backend.Controllers;
 
 [ApiController]
 [Route("api/v1/student/dashboard")]
-[Authorize(Roles = "Student")]
+[Authorize(Policy = AppPolicies.StudentOnly)]
 public class StudentDashboardController : ControllerBase
 {
     private readonly StudentDashboardService _dashboardService;
@@ -32,4 +33,3 @@ public class StudentDashboardController : ControllerBase
         return Ok(dashboard);
     }
 }
-

@@ -241,7 +241,7 @@ public class CourseServiceTests
     }
 
     [Fact]
-    public async Task GetCoursesForAdminAsync_AppliesFiltersAndPagination()
+    public async Task GetCoursesForManagementAsync_AppliesFiltersAndPagination()
     {
         await using var dbContext = CreateDbContext();
         var teacher = CreateTeacher("teacher-1", "Ada", "Lovelace");
@@ -289,7 +289,7 @@ public class CourseServiceTests
             Search = "GraphQL"
         };
 
-        var result = await service.GetCoursesForAdminAsync(options);
+        var result = await service.GetCoursesForManagementAsync(options);
 
         Assert.Equal(1, result.TotalCount);
         Assert.Single(result.Items);
@@ -297,7 +297,7 @@ public class CourseServiceTests
     }
 
     [Fact]
-    public async Task DisableCourseAdminAsync_SetsStatusToArchived()
+    public async Task ArchiveCourseAsync_SetsStatusToArchived()
     {
         await using var dbContext = CreateDbContext();
         var course = new Course
@@ -311,7 +311,7 @@ public class CourseServiceTests
         await dbContext.SaveChangesAsync();
 
         var service = new CourseService(dbContext);
-        var disabled = await service.DisableCourseAdminAsync(course.Id);
+        var disabled = await service.ArchiveCourseAsync(course.Id);
 
         Assert.True(disabled);
         var stored = await dbContext.Courses.SingleAsync();
@@ -320,7 +320,7 @@ public class CourseServiceTests
     }
 
     [Fact]
-    public async Task DeleteCourseAdminAsync_RemovesCourseWithoutTeacherCheck()
+    public async Task DeleteCourseForManagementAsync_RemovesCourseWithoutTeacherCheck()
     {
         await using var dbContext = CreateDbContext();
         var course = new Course
@@ -334,7 +334,7 @@ public class CourseServiceTests
         await dbContext.SaveChangesAsync();
 
         var service = new CourseService(dbContext);
-        var deleted = await service.DeleteCourseAdminAsync(course.Id);
+        var deleted = await service.DeleteCourseForManagementAsync(course.Id);
 
         Assert.True(deleted);
         Assert.Empty(dbContext.Courses);

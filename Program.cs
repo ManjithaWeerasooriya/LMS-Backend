@@ -1,8 +1,10 @@
+using System.Security.Claims;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
 using LMS_Backend.Data;
+using LMS_Backend.Infrastructure.Auth;
 using LMS_Backend.Infrastructure.Seed;
 using LMS_Backend.Models.Entities;
 using LMS_Backend.Services;
@@ -86,11 +88,17 @@ builder.Services.AddAuthentication(options =>
         ValidIssuer = jwt["Issuer"],
         ValidAudience = jwt["Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(keyBytes),
+        NameClaimType = ClaimTypes.Name,
+        RoleClaimType = ClaimTypes.Role,
         ClockSkew = TimeSpan.FromSeconds(30)
     };
 });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(AppPolicies.TeacherOnly, policy => policy.RequireRole(AppRoles.Teacher));
+    options.AddPolicy(AppPolicies.StudentOnly, policy => policy.RequireRole(AppRoles.Student));
+});
 
 // Services
 builder.Services.AddScoped<TokenService>();

@@ -58,7 +58,7 @@ public class CourseService
         return await ProjectToCourseListItems(query).ToListAsync(cancellationToken);
     }
 
-    public async Task<PagedResult<CourseListItemDto>> GetCoursesForAdminAsync(
+    public async Task<PagedResult<CourseListItemDto>> GetCoursesForManagementAsync(
         CourseQueryOptions options)
     {
         if (options == null)
@@ -172,7 +172,7 @@ public class CourseService
         return true;
     }
 
-    public async Task<bool> DisableCourseAdminAsync(Guid courseId)
+    public async Task<bool> ArchiveCourseAsync(Guid courseId)
     {
         var course = await _dbContext.Courses
             .FirstOrDefaultAsync(c => c.Id == courseId);
@@ -189,7 +189,7 @@ public class CourseService
         return true;
     }
 
-    public async Task<bool> DeleteCourseAdminAsync(Guid courseId)
+    public async Task<bool> DeleteCourseForManagementAsync(Guid courseId)
     {
         var course = await _dbContext.Courses
             .FirstOrDefaultAsync(c => c.Id == courseId);

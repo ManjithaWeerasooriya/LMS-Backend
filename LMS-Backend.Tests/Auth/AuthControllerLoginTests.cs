@@ -1,8 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using LMS_Backend.Controllers;
 using LMS_Backend.Data;
+using LMS_Backend.Infrastructure.Auth;
 using LMS_Backend.Models.DTOs.Auth;
 using LMS_Backend.Models.Entities;
 using LMS_Backend.Services;
@@ -114,7 +118,7 @@ public class AuthControllerLoginTests
         {
             Email = "user@example.com",
             UserName = "user@example.com",
-            Status = UserStatus.Pending,
+            Status = UserStatus.Suspended,
             EmailConfirmed = true
         };
 
@@ -251,9 +255,19 @@ public class AuthControllerLoginTests
         var accessToken = (string)body.GetType().GetProperty("accessToken")!.GetValue(body)!;
         var refreshToken = (string)body.GetType().GetProperty("refreshToken")!.GetValue(body)!;
         var tokenType = (string)body.GetType().GetProperty("tokenType")!.GetValue(body)!;
+        var userPayload = body.GetType().GetProperty("user")!.GetValue(body)!;
+        var role = (string)userPayload.GetType().GetProperty("role")!.GetValue(userPayload)!;
 
         Assert.False(string.IsNullOrWhiteSpace(accessToken));
         Assert.False(string.IsNullOrWhiteSpace(refreshToken));
         Assert.Equal("Bearer", tokenType);
+        Assert.Equal(AppRoles.Student, role);
+
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(accessToken);
+        var roleClaims = jwt.Claims.Where(claim => claim.Type == AppClaimTypes.Role).ToList();
+
+        Assert.Single(roleClaims);
+        Assert.Equal(AppRoles.Student, roleClaims[0].Value);
+        Assert.DoesNotContain(jwt.Claims, claim => claim.Type == ClaimTypes.Role);
     }
 }

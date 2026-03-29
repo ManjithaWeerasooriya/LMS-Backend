@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using LMS_Backend.Infrastructure.Auth;
 using LMS_Backend.Models.DTOs.LiveClasses;
 using LMS_Backend.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -8,7 +9,7 @@ namespace LMS_Backend.Controllers;
 
 [ApiController]
 [Route("api/v1/teacher/live-classes")]
-[Authorize(Roles = "Teacher")]
+[Authorize(Policy = AppPolicies.TeacherOnly)]
 public class TeacherLiveClassesController : ControllerBase
 {
     private readonly LiveClassService _liveClassService;
@@ -64,4 +65,3 @@ public class TeacherLiveClassesController : ControllerBase
         return CreatedAtAction(nameof(GetUpcoming), new { id = liveClass.Id }, new { liveClass.Id });
     }
 }
-
