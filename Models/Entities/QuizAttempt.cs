@@ -15,16 +15,25 @@ public class QuizAttempt
     public Quiz Quiz { get; set; } = default!;
 
     [Required]
-    public string StudentId { get; set; } = default!;
+    public string StudentId { get; set; } = string.Empty;
 
     [ForeignKey(nameof(StudentId))]
     public User Student { get; set; } = default!;
 
-    /// <summary>
-    /// Marks obtained by the student for this attempt.
-    /// </summary>
-    public int Score { get; set; }
+    public int AttemptNumber { get; set; }
 
-    public DateTime CompletedAt { get; set; } = DateTime.UtcNow;
+    public QuizAttemptStatus Status { get; set; } = QuizAttemptStatus.InProgress;
+
+    public DateTime StartedAt { get; set; } = DateTime.UtcNow;
+
+    public DateTime DeadlineUtc { get; set; }
+
+    public DateTime? SubmittedAt { get; set; }
+
+    public DateTime? ReviewedAt { get; set; }
+
+    [Column(TypeName = "decimal(10,2)")]
+    public decimal Score { get; set; }
+
+    public ICollection<StudentAnswer> Answers { get; set; } = new List<StudentAnswer>();
 }
-
