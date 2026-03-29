@@ -1,8 +1,0 @@
-$kind: http-request
-name: Reactivate User
-method: POST
-url: '{{baseUrl}}/api/v1/admin/users/{{userId}}/reactivate'
-order: 3000
-headers:
-  - key: Content-Type
-    value: application/json

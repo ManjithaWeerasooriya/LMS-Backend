@@ -1,7 +1,0 @@
-$kind: collection
-name: LMS - Student
-auth:
-  type: bearer
-  credentials:
-    - key: token
-      value: '{{accessToken}}'

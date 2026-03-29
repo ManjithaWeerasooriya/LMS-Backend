@@ -1,5 +1,0 @@
-$kind: collection
-name: LMS - Public
-variables:
-  - key: baseUrl
-    value: '{{baseUrl}}'

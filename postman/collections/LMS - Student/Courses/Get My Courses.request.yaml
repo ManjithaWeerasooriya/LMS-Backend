@@ -1,5 +1,0 @@
-$kind: http-request
-name: Get My Courses
-method: GET
-url: '{{baseUrl}}/api/v1/student/courses'
-order: 2000

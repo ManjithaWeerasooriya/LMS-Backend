@@ -1,9 +1,0 @@
-$kind: http-request
-name: Get Dashboard
-method: GET
-url: "{{baseUrl}}/api/v1/student/dashboard"
-auth:
-  type: bearer
-  credentials:
-    token: "{{accessToken}}"
-order: 1000

@@ -1,5 +1,0 @@
-$kind: http-request
-name: Get Quiz By ID
-method: GET
-url: '{{baseUrl}}/api/v1/teacher/quizzes/{{quizId}}'
-order: 2000

@@ -1,7 +1,0 @@
-$kind: collection
-name: LMS - Admin
-auth:
-  type: bearer
-  credentials:
-    - key: token
-      value: '{{accessToken}}'
