@@ -1,0 +1,29 @@
+using Microsoft.AspNetCore.Mvc;
+
+[ApiController]
+[Route("api/[controller]")]
+public class MaterialsController : ControllerBase
+{
+    private readonly AzureStorageService _azureStorageService;
+
+    public MaterialsController(AzureStorageService azureStorageService)
+    {
+        _azureStorageService = azureStorageService;
+    }
+
+    [HttpPost("upload")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> Upload([FromForm(Name = "file")] IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest("No file uploaded.");
+
+        var fileUrl = await _azureStorageService.UploadFileAsync(file);
+
+        return Ok(new
+        {
+            message = "File uploaded successfully",
+            url = fileUrl
+        });
+    }
+}
