@@ -52,10 +52,11 @@ public class StudentDashboardService
 
         var upcomingClasses = await _dbContext.LiveClasses
             .Include(l => l.Course)
-            .ThenInclude(c => c.Enrollments)
+            .ThenInclude(c => c!.Enrollments)
             .Where(l =>
                 l.ScheduledAt >= nowUtc &&
                 l.CourseId != null &&
+                l.Course != null &&
                 l.Course.Enrollments.Any(e => e.StudentId == studentId))
             .OrderBy(l => l.ScheduledAt)
             .Take(5)
@@ -75,9 +76,12 @@ public class StudentDashboardService
             .Include(q => q.Attempts)
             .Where(q =>
                 q.IsPublished &&
+                q.StartTimeUtc <= nowUtc &&
+                q.EndTimeUtc >= nowUtc &&
                 q.Course.Enrollments.Any(e => e.StudentId == studentId) &&
-                !q.Attempts.Any(a => a.StudentId == studentId))
-            .OrderBy(q => q.CreatedAt)
+                !q.Attempts.Any(a => a.StudentId == studentId && a.Status == QuizAttemptStatus.InProgress) &&
+                (q.AllowMultipleAttempts || !q.Attempts.Any(a => a.StudentId == studentId)))
+            .OrderBy(q => q.StartTimeUtc)
             .Take(5)
             .Select(q => new StudentDashboardQuizItemDto
             {
@@ -102,4 +106,3 @@ public class StudentDashboardService
         };
     }
 }
-

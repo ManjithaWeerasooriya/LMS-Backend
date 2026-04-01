@@ -12,7 +12,11 @@ public class ApplicationDBContext : IdentityDbContext<User>
     public DbSet<Course> Courses => Set<Course>();
     public DbSet<CourseEnrollment> CourseEnrollments => Set<CourseEnrollment>();
     public DbSet<Quiz> Quizzes => Set<Quiz>();
+    public DbSet<Question> Questions => Set<Question>();
+    public DbSet<QuestionOption> QuestionOptions => Set<QuestionOption>();
     public DbSet<QuizAttempt> QuizAttempts => Set<QuizAttempt>();
+    public DbSet<StudentAnswer> StudentAnswers => Set<StudentAnswer>();
+    public DbSet<StudentAnswerOption> StudentAnswerOptions => Set<StudentAnswerOption>();
     public DbSet<LiveClass> LiveClasses => Set<LiveClass>();
     public DbSet<Assignment> Assignments => Set<Assignment>();
     public DbSet<AssignmentSubmission> AssignmentSubmissions => Set<AssignmentSubmission>();
@@ -21,6 +25,7 @@ public class ApplicationDBContext : IdentityDbContext<User>
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+        builder.ApplyConfigurationsFromAssembly(typeof(ApplicationDBContext).Assembly);
 
         // Unique constraint on UserId + DeviceId to ensure one refresh token per device per user
         builder.Entity<RefreshToken>()
@@ -48,24 +53,6 @@ public class ApplicationDBContext : IdentityDbContext<User>
             .HasOne(e => e.Student)
             .WithMany()
             .HasForeignKey(e => e.StudentId)
-            .OnDelete(DeleteBehavior.Restrict);
-
-        builder.Entity<Quiz>()
-            .HasOne(q => q.Course)
-            .WithMany(c => c.Quizzes)
-            .HasForeignKey(q => q.CourseId)
-            .OnDelete(DeleteBehavior.Cascade);
-
-        builder.Entity<QuizAttempt>()
-            .HasOne(a => a.Quiz)
-            .WithMany(q => q.Attempts)
-            .HasForeignKey(a => a.QuizId)
-            .OnDelete(DeleteBehavior.Cascade);
-
-        builder.Entity<QuizAttempt>()
-            .HasOne(a => a.Student)
-            .WithMany()
-            .HasForeignKey(a => a.StudentId)
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.Entity<LiveClass>()

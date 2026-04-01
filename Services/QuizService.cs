@@ -1,6 +1,7 @@
 using LMS_Backend.Data;
 using LMS_Backend.Models.DTOs.Quiz;
 using LMS_Backend.Models.Entities;
+using LMS_Backend.Models.Exceptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace LMS_Backend.Services;
@@ -14,36 +15,15 @@ public class QuizService : IQuizService
         _context = context;
     }
 
-    public async Task<QuizResponseDto> CreateQuizAsync(CreateQuizDto dto)
+    public async Task<IReadOnlyList<QuizResponseDto>> GetTeacherQuizzesByCourseAsync(
+        string teacherId,
+        Guid courseId,
+        CancellationToken cancellationToken)
     {
-        var courseExists = await _context.Courses.AnyAsync(c => c.Id == dto.CourseId);
-        if (!courseExists)
-            throw new Exception("Course not found.");
+        await EnsureTeacherOwnsCourseAsync(teacherId, courseId, cancellationToken);
 
-        if (dto.PassingMarks > dto.TotalMarks)
-            throw new Exception("Passing marks cannot be greater than total marks.");
-
-        var quiz = new Quiz
-        {
-            Id = Guid.NewGuid(),
-            CourseId = dto.CourseId,
-            Title = dto.Title,
-            DurationMinutes = dto.DurationMinutes,
-            TotalMarks = dto.TotalMarks,
-            PassingMarks = dto.PassingMarks,
-            IsPublished = dto.IsPublished,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        _context.Quizzes.Add(quiz);
-        await _context.SaveChangesAsync();
-
-        return MapToDto(quiz);
-    }
-
-    public async Task<List<QuizResponseDto>> GetQuizzesByCourseAsync(Guid courseId)
-    {
         return await _context.Quizzes
+            .AsNoTracking()
             .Where(q => q.CourseId == courseId)
             .OrderByDescending(q => q.CreatedAt)
             .Select(q => new QuizResponseDto
@@ -51,63 +31,1149 @@ public class QuizService : IQuizService
                 Id = q.Id,
                 CourseId = q.CourseId,
                 Title = q.Title,
+                Description = q.Description,
                 DurationMinutes = q.DurationMinutes,
+                StartTimeUtc = q.StartTimeUtc,
+                EndTimeUtc = q.EndTimeUtc,
                 TotalMarks = q.TotalMarks,
-                PassingMarks = q.PassingMarks,
+                RandomizeQuestions = q.RandomizeQuestions,
+                AllowMultipleAttempts = q.AllowMultipleAttempts,
                 IsPublished = q.IsPublished,
-                CreatedAt = q.CreatedAt
+                AreResultsPublished = q.AreResultsPublished,
+                QuestionCount = q.Questions.Count,
+                AttemptCount = q.Attempts.Count,
+                CreatedAt = q.CreatedAt,
+                UpdatedAt = q.UpdatedAt
             })
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<QuizResponseDto?> GetQuizByIdAsync(Guid quizId)
+    public async Task<QuizResponseDto> GetTeacherQuizByIdAsync(
+        string teacherId,
+        Guid quizId,
+        CancellationToken cancellationToken)
     {
-        var quiz = await _context.Quizzes.FirstOrDefaultAsync(q => q.Id == quizId);
-        return quiz == null ? null : MapToDto(quiz);
+        var quiz = await GetTeacherManagedQuizQuery(teacherId)
+            .AsNoTracking()
+            .Include(q => q.Questions)
+            .Include(q => q.Attempts)
+            .FirstOrDefaultAsync(q => q.Id == quizId, cancellationToken);
+
+        if (quiz == null)
+        {
+            await ThrowTeacherQuizAccessExceptionAsync(teacherId, quizId, cancellationToken);
+        }
+
+        return ToQuizResponseDto(quiz!);
     }
 
-    public async Task<QuizResponseDto?> UpdateQuizAsync(Guid quizId, UpdateQuizDto dto)
+    public async Task<QuizResponseDto> CreateQuizAsync(
+        string teacherId,
+        CreateQuizDto dto,
+        CancellationToken cancellationToken)
     {
-        var quiz = await _context.Quizzes.FirstOrDefaultAsync(q => q.Id == quizId);
-        if (quiz == null) return null;
+        await EnsureTeacherOwnsCourseAsync(teacherId, dto.CourseId, cancellationToken);
 
-        if (dto.PassingMarks > dto.TotalMarks)
-            throw new Exception("Passing marks cannot be greater than total marks.");
+        var quiz = new Quiz
+        {
+            CourseId = dto.CourseId,
+            Title = dto.Title.Trim(),
+            Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim(),
+            DurationMinutes = dto.DurationMinutes,
+            StartTimeUtc = EnsureUtc(dto.StartTimeUtc),
+            EndTimeUtc = EnsureUtc(dto.EndTimeUtc),
+            TotalMarks = dto.TotalMarks,
+            RandomizeQuestions = dto.RandomizeQuestions,
+            AllowMultipleAttempts = dto.AllowMultipleAttempts,
+            IsPublished = dto.IsPublished,
+            AreResultsPublished = dto.AreResultsPublished,
+            CreatedAt = DateTime.UtcNow
+        };
 
-        quiz.Title = dto.Title;
+        _context.Quizzes.Add(quiz);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return await GetTeacherQuizByIdAsync(teacherId, quiz.Id, cancellationToken);
+    }
+
+    public async Task<QuizResponseDto> UpdateQuizAsync(
+        string teacherId,
+        Guid quizId,
+        UpdateQuizDto dto,
+        CancellationToken cancellationToken)
+    {
+        var quiz = await GetTeacherManagedQuizQuery(teacherId)
+            .Include(q => q.Questions)
+            .FirstOrDefaultAsync(q => q.Id == quizId, cancellationToken);
+
+        if (quiz == null)
+        {
+            await ThrowTeacherQuizAccessExceptionAsync(teacherId, quizId, cancellationToken);
+        }
+
+        var activeQuestionMarks = quiz!.Questions.Sum(q => q.Marks);
+        if (dto.TotalMarks < activeQuestionMarks)
+        {
+            throw new InvalidOperationException("Quiz total marks cannot be less than the sum of existing question marks.");
+        }
+
+        quiz.Title = dto.Title.Trim();
+        quiz.Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim();
         quiz.DurationMinutes = dto.DurationMinutes;
+        quiz.StartTimeUtc = EnsureUtc(dto.StartTimeUtc);
+        quiz.EndTimeUtc = EnsureUtc(dto.EndTimeUtc);
         quiz.TotalMarks = dto.TotalMarks;
-        quiz.PassingMarks = dto.PassingMarks;
+        quiz.RandomizeQuestions = dto.RandomizeQuestions;
+        quiz.AllowMultipleAttempts = dto.AllowMultipleAttempts;
         quiz.IsPublished = dto.IsPublished;
+        quiz.AreResultsPublished = dto.AreResultsPublished;
+        quiz.UpdatedAt = DateTime.UtcNow;
 
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
 
-        return MapToDto(quiz);
+        return await GetTeacherQuizByIdAsync(teacherId, quizId, cancellationToken);
     }
 
-    public async Task<bool> DeleteQuizAsync(Guid quizId)
+    public async Task DeleteQuizAsync(
+        string teacherId,
+        Guid quizId,
+        CancellationToken cancellationToken)
     {
-        var quiz = await _context.Quizzes.FirstOrDefaultAsync(q => q.Id == quizId);
-        if (quiz == null) return false;
+        var quiz = await GetTeacherManagedQuizQuery(teacherId)
+            .Include(q => q.Questions)
+            .ThenInclude(question => question.Options)
+            .FirstOrDefaultAsync(q => q.Id == quizId, cancellationToken);
 
-        _context.Quizzes.Remove(quiz);
-        await _context.SaveChangesAsync();
+        if (quiz == null)
+        {
+            await ThrowTeacherQuizAccessExceptionAsync(teacherId, quizId, cancellationToken);
+        }
 
-        return true;
+        quiz!.IsDeleted = true;
+        quiz.DeletedAt = DateTime.UtcNow;
+        quiz.UpdatedAt = DateTime.UtcNow;
+
+        foreach (var question in quiz.Questions)
+        {
+            question.IsDeleted = true;
+            question.DeletedAt = DateTime.UtcNow;
+            question.UpdatedAt = DateTime.UtcNow;
+
+            foreach (var option in question.Options)
+            {
+                option.IsDeleted = true;
+                option.DeletedAt = DateTime.UtcNow;
+            }
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
     }
 
-    private static QuizResponseDto MapToDto(Quiz quiz)
+    public async Task<QuizResponseDto> SetResultsPublicationAsync(
+        string teacherId,
+        Guid quizId,
+        bool publishResults,
+        CancellationToken cancellationToken)
     {
-        return new QuizResponseDto
+        var quiz = await GetTeacherManagedQuizQuery(teacherId)
+            .FirstOrDefaultAsync(q => q.Id == quizId, cancellationToken);
+
+        if (quiz == null)
+        {
+            await ThrowTeacherQuizAccessExceptionAsync(teacherId, quizId, cancellationToken);
+        }
+
+        quiz!.AreResultsPublished = publishResults;
+        quiz.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return await GetTeacherQuizByIdAsync(teacherId, quizId, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<QuestionResponseDto>> GetQuestionsAsync(
+        string teacherId,
+        Guid quizId,
+        CancellationToken cancellationToken)
+    {
+        await EnsureTeacherOwnsQuizAsync(teacherId, quizId, cancellationToken);
+
+        var questions = await _context.Questions
+            .AsNoTracking()
+            .Include(q => q.Options)
+            .Where(q => q.QuizId == quizId)
+            .OrderBy(q => q.OrderIndex)
+            .ToListAsync(cancellationToken);
+
+        return questions.Select(ToQuestionResponseDto).ToList();
+    }
+
+    public async Task<QuestionResponseDto> GetQuestionByIdAsync(
+        string teacherId,
+        Guid quizId,
+        Guid questionId,
+        CancellationToken cancellationToken)
+    {
+        await EnsureTeacherOwnsQuizAsync(teacherId, quizId, cancellationToken);
+
+        var question = await _context.Questions
+            .AsNoTracking()
+            .Include(q => q.Options)
+            .FirstOrDefaultAsync(q => q.QuizId == quizId && q.Id == questionId, cancellationToken);
+
+        if (question == null)
+        {
+            throw new NotFoundException("Question not found.");
+        }
+
+        return ToQuestionResponseDto(question);
+    }
+
+    public async Task<QuestionResponseDto> CreateQuestionAsync(
+        string teacherId,
+        Guid quizId,
+        CreateQuestionDto dto,
+        CancellationToken cancellationToken)
+    {
+        var quiz = await GetTeacherManagedQuizQuery(teacherId)
+            .Include(q => q.Attempts)
+            .Include(q => q.Questions)
+            .FirstOrDefaultAsync(q => q.Id == quizId, cancellationToken);
+
+        if (quiz == null)
+        {
+            await ThrowTeacherQuizAccessExceptionAsync(teacherId, quizId, cancellationToken);
+            throw new InvalidOperationException("Quiz lookup failed unexpectedly.");
+        }
+
+        EnsureQuizStructureCanChange(quiz);
+        EnsureQuestionOrderIsUnique(quiz.Questions, dto.OrderIndex, null);
+        EnsureMarksBudget(quiz.TotalMarks, quiz.Questions.Sum(q => q.Marks) + dto.Marks);
+
+        var question = new Question
+        {
+            QuizId = quizId,
+            Text = dto.Text.Trim(),
+            Type = dto.Type,
+            Marks = dto.Marks,
+            OrderIndex = dto.OrderIndex,
+            CreatedAt = DateTime.UtcNow,
+            Options = dto.Options
+                .OrderBy(o => o.OrderIndex)
+                .Select(o => new QuestionOption
+                {
+                    Text = o.Text.Trim(),
+                    IsCorrect = o.IsCorrect,
+                    OrderIndex = o.OrderIndex
+                })
+                .ToList()
+        };
+
+        _context.Questions.Add(question);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return await GetQuestionByIdAsync(teacherId, quizId, question.Id, cancellationToken);
+    }
+
+    public async Task<QuestionResponseDto> UpdateQuestionAsync(
+        string teacherId,
+        Guid quizId,
+        Guid questionId,
+        UpdateQuestionDto dto,
+        CancellationToken cancellationToken)
+    {
+        var quiz = await GetTeacherManagedQuizQuery(teacherId)
+            .Include(q => q.Attempts)
+            .Include(q => q.Questions)
+            .ThenInclude(question => question.Options)
+            .FirstOrDefaultAsync(q => q.Id == quizId, cancellationToken);
+
+        if (quiz == null)
+        {
+            await ThrowTeacherQuizAccessExceptionAsync(teacherId, quizId, cancellationToken);
+            throw new InvalidOperationException("Quiz lookup failed unexpectedly.");
+        }
+
+        EnsureQuizStructureCanChange(quiz);
+
+        var question = quiz.Questions.FirstOrDefault(q => q.Id == questionId);
+        if (question == null)
+        {
+            throw new NotFoundException("Question not found.");
+        }
+
+        EnsureQuestionOrderIsUnique(quiz.Questions, dto.OrderIndex, questionId);
+
+        var remainingMarks = quiz.Questions
+            .Where(q => q.Id != questionId)
+            .Sum(q => q.Marks);
+
+        EnsureMarksBudget(quiz.TotalMarks, remainingMarks + dto.Marks);
+
+        question.Text = dto.Text.Trim();
+        question.Type = dto.Type;
+        question.Marks = dto.Marks;
+        question.OrderIndex = dto.OrderIndex;
+        question.UpdatedAt = DateTime.UtcNow;
+
+        foreach (var option in question.Options)
+        {
+            option.IsDeleted = true;
+            option.DeletedAt = DateTime.UtcNow;
+        }
+
+        question.Options = dto.Options
+            .OrderBy(o => o.OrderIndex)
+            .Select(o => new QuestionOption
+            {
+                QuestionId = question.Id,
+                Text = o.Text.Trim(),
+                IsCorrect = o.IsCorrect,
+                OrderIndex = o.OrderIndex
+            })
+            .ToList();
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return await GetQuestionByIdAsync(teacherId, quizId, questionId, cancellationToken);
+    }
+
+    public async Task DeleteQuestionAsync(
+        string teacherId,
+        Guid quizId,
+        Guid questionId,
+        CancellationToken cancellationToken)
+    {
+        var quiz = await GetTeacherManagedQuizQuery(teacherId)
+            .Include(q => q.Attempts)
+            .Include(q => q.Questions)
+            .ThenInclude(question => question.Options)
+            .FirstOrDefaultAsync(q => q.Id == quizId, cancellationToken);
+
+        if (quiz == null)
+        {
+            await ThrowTeacherQuizAccessExceptionAsync(teacherId, quizId, cancellationToken);
+            throw new InvalidOperationException("Quiz lookup failed unexpectedly.");
+        }
+
+        EnsureQuizStructureCanChange(quiz);
+
+        var question = quiz.Questions.FirstOrDefault(q => q.Id == questionId);
+        if (question == null)
+        {
+            throw new NotFoundException("Question not found.");
+        }
+
+        question.IsDeleted = true;
+        question.DeletedAt = DateTime.UtcNow;
+        question.UpdatedAt = DateTime.UtcNow;
+
+        foreach (var option in question.Options)
+        {
+            option.IsDeleted = true;
+            option.DeletedAt = DateTime.UtcNow;
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<QuizAttemptListItemDto>> GetQuizAttemptsAsync(
+        string teacherId,
+        Guid quizId,
+        CancellationToken cancellationToken)
+    {
+        await EnsureTeacherOwnsQuizAsync(teacherId, quizId, cancellationToken);
+
+        return await _context.QuizAttempts
+            .AsNoTracking()
+            .Include(a => a.Student)
+            .Where(a => a.QuizId == quizId)
+            .OrderByDescending(a => a.AttemptNumber)
+            .ThenByDescending(a => a.StartedAt)
+            .Select(a => new QuizAttemptListItemDto
+            {
+                AttemptId = a.Id,
+                QuizId = a.QuizId,
+                StudentId = a.StudentId,
+                StudentName = BuildFullName(a.Student.FirstName, a.Student.LastName, a.Student.UserName),
+                AttemptNumber = a.AttemptNumber,
+                Status = a.Status,
+                StartedAt = a.StartedAt,
+                DeadlineUtc = a.DeadlineUtc,
+                SubmittedAt = a.SubmittedAt,
+                Score = a.Score
+            })
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<QuizAttemptDetailDto> GetQuizAttemptByIdAsync(
+        string teacherId,
+        Guid quizId,
+        Guid attemptId,
+        CancellationToken cancellationToken)
+    {
+        await EnsureTeacherOwnsQuizAsync(teacherId, quizId, cancellationToken);
+
+        var attempt = await LoadAttemptAsync(attemptId, cancellationToken);
+        if (attempt == null || attempt.QuizId != quizId)
+        {
+            throw new NotFoundException("Quiz attempt not found.");
+        }
+
+        return ToTeacherAttemptDetailDto(attempt);
+    }
+
+    public async Task<QuizAttemptDetailDto> GradeAnswerAsync(
+        string teacherId,
+        Guid quizId,
+        Guid attemptId,
+        Guid answerId,
+        ManualGradeAnswerDto dto,
+        CancellationToken cancellationToken)
+    {
+        await EnsureTeacherOwnsQuizAsync(teacherId, quizId, cancellationToken);
+
+        var attempt = await LoadAttemptAsync(attemptId, cancellationToken);
+        if (attempt == null || attempt.QuizId != quizId)
+        {
+            throw new NotFoundException("Quiz attempt not found.");
+        }
+
+        var answer = attempt.Answers.FirstOrDefault(a => a.Id == answerId);
+        if (answer == null)
+        {
+            throw new NotFoundException("Answer not found.");
+        }
+
+        if (QuestionValidation.IsObjective(answer.Question.Type))
+        {
+            throw new InvalidOperationException("Objective answers are auto-graded and cannot be manually graded.");
+        }
+
+        if (dto.AwardedMarks > answer.Question.Marks)
+        {
+            throw new InvalidOperationException("Awarded marks cannot be greater than the question marks.");
+        }
+
+        answer.AwardedMarks = dto.AwardedMarks;
+        answer.TeacherFeedback = string.IsNullOrWhiteSpace(dto.TeacherFeedback) ? null : dto.TeacherFeedback.Trim();
+        answer.ReviewStatus = StudentAnswerReviewStatus.Reviewed;
+        answer.ReviewedAt = DateTime.UtcNow;
+
+        RecalculateAttemptOutcome(attempt);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return ToTeacherAttemptDetailDto(attempt);
+    }
+
+    public async Task<IReadOnlyList<StudentQuizListItemDto>> GetStudentQuizzesAsync(
+        string studentId,
+        CancellationToken cancellationToken)
+    {
+        return await _context.Quizzes
+            .AsNoTracking()
+            .Include(q => q.Course)
+            .ThenInclude(c => c.Enrollments)
+            .Include(q => q.Attempts)
+            .Where(q =>
+                q.IsPublished &&
+                q.Course.Status == CourseStatus.Active &&
+                q.Course.Enrollments.Any(e => e.StudentId == studentId))
+            .OrderBy(q => q.StartTimeUtc)
+            .Select(q => new StudentQuizListItemDto
+            {
+                QuizId = q.Id,
+                CourseId = q.CourseId,
+                CourseTitle = q.Course.Title,
+                Title = q.Title,
+                Description = q.Description,
+                DurationMinutes = q.DurationMinutes,
+                StartTimeUtc = q.StartTimeUtc,
+                EndTimeUtc = q.EndTimeUtc,
+                TotalMarks = q.TotalMarks,
+                AllowMultipleAttempts = q.AllowMultipleAttempts,
+                ResultsPublished = q.AreResultsPublished,
+                AttemptCount = q.Attempts.Count(a => a.StudentId == studentId)
+            })
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<StudentQuizDetailDto> GetStudentQuizByIdAsync(
+        string studentId,
+        Guid quizId,
+        CancellationToken cancellationToken)
+    {
+        var quiz = await GetStudentVisibleQuizQuery(studentId)
+            .AsNoTracking()
+            .Include(q => q.Course)
+            .Include(q => q.Questions)
+            .ThenInclude(question => question.Options)
+            .Include(q => q.Attempts)
+            .FirstOrDefaultAsync(q => q.Id == quizId, cancellationToken);
+
+        if (quiz == null)
+        {
+            await ThrowStudentQuizAccessExceptionAsync(studentId, quizId, cancellationToken);
+        }
+
+        return ToStudentQuizDetailDto(quiz!, studentId, randomizeQuestions: quiz!.RandomizeQuestions);
+    }
+
+    public async Task<StartQuizAttemptResponseDto> StartQuizAttemptAsync(
+        string studentId,
+        Guid quizId,
+        CancellationToken cancellationToken)
+    {
+        var quiz = await GetStudentVisibleQuizQuery(studentId)
+            .Include(q => q.Course)
+            .ThenInclude(c => c.Enrollments)
+            .Include(q => q.Questions)
+            .ThenInclude(question => question.Options)
+            .Include(q => q.Attempts)
+            .FirstOrDefaultAsync(q => q.Id == quizId, cancellationToken);
+
+        if (quiz == null)
+        {
+            await ThrowStudentQuizAccessExceptionAsync(studentId, quizId, cancellationToken);
+            throw new InvalidOperationException("Quiz lookup failed unexpectedly.");
+        }
+
+        var nowUtc = DateTime.UtcNow;
+        EnsureQuizCanBeStarted(quiz, nowUtc, studentId);
+
+        var existingInProgressAttempt = quiz.Attempts
+            .FirstOrDefault(a => a.StudentId == studentId && a.Status == QuizAttemptStatus.InProgress);
+
+        if (existingInProgressAttempt != null)
+        {
+            throw new ConflictException("You already have an in-progress attempt for this quiz.");
+        }
+
+        var nextAttemptNumber = quiz.Attempts
+            .Where(a => a.StudentId == studentId)
+            .Select(a => a.AttemptNumber)
+            .DefaultIfEmpty(0)
+            .Max() + 1;
+
+        if (!quiz.AllowMultipleAttempts && nextAttemptNumber > 1)
+        {
+            throw new ConflictException("Multiple attempts are not allowed for this quiz.");
+        }
+
+        var deadlineUtc = CalculateAttemptDeadlineUtc(nowUtc, quiz);
+
+        var attempt = new QuizAttempt
+        {
+            QuizId = quiz.Id,
+            StudentId = studentId,
+            AttemptNumber = nextAttemptNumber,
+            Status = QuizAttemptStatus.InProgress,
+            StartedAt = nowUtc,
+            DeadlineUtc = deadlineUtc
+        };
+
+        _context.QuizAttempts.Add(attempt);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return new StartQuizAttemptResponseDto
+        {
+            AttemptId = attempt.Id,
+            QuizId = quiz.Id,
+            AttemptNumber = attempt.AttemptNumber,
+            StartedAt = attempt.StartedAt,
+            DeadlineUtc = attempt.DeadlineUtc,
+            Quiz = ToStudentQuizDetailDto(quiz, studentId, randomizeQuestions: quiz.RandomizeQuestions)
+        };
+    }
+
+    public async Task<QuizAttemptDetailDto> GetStudentAttemptByIdAsync(
+        string studentId,
+        Guid attemptId,
+        CancellationToken cancellationToken)
+    {
+        var attempt = await LoadAttemptAsync(attemptId, cancellationToken);
+        if (attempt == null || !string.Equals(attempt.StudentId, studentId, StringComparison.Ordinal))
+        {
+            throw new NotFoundException("Quiz attempt not found.");
+        }
+
+        return ToStudentAttemptDetailDto(attempt);
+    }
+
+    public async Task<QuizAttemptDetailDto> SubmitQuizAttemptAsync(
+        string studentId,
+        Guid attemptId,
+        SubmitQuizAttemptDto dto,
+        CancellationToken cancellationToken)
+    {
+        var attempt = await LoadAttemptAsync(attemptId, cancellationToken);
+        if (attempt == null || !string.Equals(attempt.StudentId, studentId, StringComparison.Ordinal))
+        {
+            throw new NotFoundException("Quiz attempt not found.");
+        }
+
+        if (attempt.Status != QuizAttemptStatus.InProgress)
+        {
+            throw new ConflictException("Only in-progress attempts can be submitted.");
+        }
+
+        var nowUtc = DateTime.UtcNow;
+        if (nowUtc > attempt.DeadlineUtc)
+        {
+            attempt.Status = QuizAttemptStatus.Expired;
+            await _context.SaveChangesAsync(cancellationToken);
+            throw new ConflictException("Quiz attempt has expired.");
+        }
+
+        attempt.SubmittedAt = nowUtc;
+        attempt.Status = QuizAttemptStatus.Submitted;
+
+        var questionMap = attempt.Quiz.Questions.ToDictionary(q => q.Id);
+        var payloadMap = dto.Answers.ToDictionary(a => a.QuestionId);
+
+        foreach (var submittedQuestionId in payloadMap.Keys)
+        {
+            if (!questionMap.ContainsKey(submittedQuestionId))
+            {
+                throw new InvalidOperationException("Submission contains an answer for a question that does not belong to this quiz.");
+            }
+        }
+
+        if (attempt.Answers.Count > 0)
+        {
+            throw new ConflictException("This quiz attempt already contains submitted answers.");
+        }
+
+        var generatedAnswers = new List<StudentAnswer>();
+
+        foreach (var question in attempt.Quiz.Questions.OrderBy(q => q.OrderIndex))
+        {
+            payloadMap.TryGetValue(question.Id, out var submittedAnswer);
+            var answer = CreateStudentAnswer(question, attempt.Id, submittedAnswer);
+            generatedAnswers.Add(answer);
+        }
+
+        _context.StudentAnswers.AddRange(generatedAnswers);
+        attempt.Answers = generatedAnswers;
+
+        RecalculateAttemptOutcome(attempt);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return ToStudentAttemptDetailDto(attempt);
+    }
+
+    private IQueryable<Quiz> GetTeacherManagedQuizQuery(string teacherId) =>
+        _context.Quizzes.Where(q => q.Course.TeacherId == teacherId);
+
+    private IQueryable<Quiz> GetStudentVisibleQuizQuery(string studentId) =>
+        _context.Quizzes.Where(q =>
+            q.IsPublished &&
+            q.Course.Status == CourseStatus.Active &&
+            q.Course.Enrollments.Any(e => e.StudentId == studentId));
+
+    private async Task EnsureTeacherOwnsCourseAsync(
+        string teacherId,
+        Guid courseId,
+        CancellationToken cancellationToken)
+    {
+        var course = await _context.Courses
+            .AsNoTracking()
+            .Where(c => c.Id == courseId)
+            .Select(c => new { c.Id, c.TeacherId })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (course == null)
+        {
+            throw new NotFoundException("Course not found.");
+        }
+
+        if (!string.Equals(course.TeacherId, teacherId, StringComparison.Ordinal))
+        {
+            throw new ForbiddenException("You do not have access to manage quizzes for this course.");
+        }
+    }
+
+    private async Task EnsureTeacherOwnsQuizAsync(
+        string teacherId,
+        Guid quizId,
+        CancellationToken cancellationToken)
+    {
+        var access = await _context.Quizzes
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .Where(q => q.Id == quizId)
+            .Select(q => new { q.Id, q.IsDeleted, q.Course.TeacherId })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (access == null || access.IsDeleted)
+        {
+            throw new NotFoundException("Quiz not found.");
+        }
+
+        if (!string.Equals(access.TeacherId, teacherId, StringComparison.Ordinal))
+        {
+            throw new ForbiddenException("You do not have access to manage this quiz.");
+        }
+    }
+
+    private async Task ThrowTeacherQuizAccessExceptionAsync(
+        string teacherId,
+        Guid quizId,
+        CancellationToken cancellationToken)
+    {
+        var access = await _context.Quizzes
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .Where(q => q.Id == quizId)
+            .Select(q => new { q.Id, q.IsDeleted, q.Course.TeacherId })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (access == null || access.IsDeleted)
+        {
+            throw new NotFoundException("Quiz not found.");
+        }
+
+        throw new ForbiddenException("You do not have access to manage this quiz.");
+    }
+
+    private async Task ThrowStudentQuizAccessExceptionAsync(
+        string studentId,
+        Guid quizId,
+        CancellationToken cancellationToken)
+    {
+        var access = await _context.Quizzes
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .Where(q => q.Id == quizId)
+            .Select(q => new
+            {
+                q.Id,
+                q.IsDeleted,
+                q.IsPublished,
+                q.Course.Status,
+                IsEnrolled = q.Course.Enrollments.Any(e => e.StudentId == studentId)
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (access == null || access.IsDeleted)
+        {
+            throw new NotFoundException("Quiz not found.");
+        }
+
+        if (!access.IsEnrolled)
+        {
+            throw new ForbiddenException("You must be enrolled in the course to access this quiz.");
+        }
+
+        throw new ForbiddenException("This quiz is not available to you.");
+    }
+
+    private static void EnsureQuizCanBeStarted(Quiz quiz, DateTime nowUtc, string studentId)
+    {
+        if (!quiz.Course.Enrollments.Any(e => e.StudentId == studentId))
+        {
+            throw new ForbiddenException("You must be enrolled in the course to attempt this quiz.");
+        }
+
+        if (!quiz.IsPublished)
+        {
+            throw new ForbiddenException("This quiz is not published.");
+        }
+
+        if (quiz.Course.Status != CourseStatus.Active)
+        {
+            throw new InvalidOperationException("Quiz attempts are only allowed for active courses.");
+        }
+
+        if (nowUtc < quiz.StartTimeUtc)
+        {
+            throw new ConflictException("This quiz is not yet available.");
+        }
+
+        if (nowUtc > quiz.EndTimeUtc)
+        {
+            throw new ConflictException("This quiz is no longer available.");
+        }
+
+        if (!quiz.Questions.Any())
+        {
+            throw new InvalidOperationException("This quiz cannot be attempted because it has no questions.");
+        }
+    }
+
+    private static DateTime CalculateAttemptDeadlineUtc(DateTime startedAtUtc, Quiz quiz)
+    {
+        var durationDeadline = startedAtUtc.AddMinutes(quiz.DurationMinutes);
+        return durationDeadline <= quiz.EndTimeUtc ? durationDeadline : quiz.EndTimeUtc;
+    }
+
+    private static void EnsureQuizStructureCanChange(Quiz quiz)
+    {
+        if (quiz.Attempts.Any())
+        {
+            throw new ConflictException("Quiz questions cannot be modified after students have started attempting the quiz.");
+        }
+    }
+
+    private static void EnsureQuestionOrderIsUnique(IEnumerable<Question> questions, int orderIndex, Guid? currentQuestionId)
+    {
+        var duplicate = questions.Any(q => q.Id != currentQuestionId && q.OrderIndex == orderIndex);
+        if (duplicate)
+        {
+            throw new InvalidOperationException("Question order indexes must be unique within a quiz.");
+        }
+    }
+
+    private static void EnsureMarksBudget(decimal quizTotalMarks, decimal allocatedMarks)
+    {
+        if (allocatedMarks > quizTotalMarks)
+        {
+            throw new InvalidOperationException("The sum of question marks cannot exceed the quiz total marks.");
+        }
+    }
+
+    private async Task<QuizAttempt?> LoadAttemptAsync(Guid attemptId, CancellationToken cancellationToken)
+    {
+        var attempt = await _context.QuizAttempts
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(a => a.Id == attemptId, cancellationToken);
+
+        if (attempt == null)
+        {
+            return null;
+        }
+
+        await _context.Entry(attempt)
+            .Reference(a => a.Student)
+            .LoadAsync(cancellationToken);
+
+        await _context.Entry(attempt)
+            .Reference(a => a.Quiz)
+            .LoadAsync(cancellationToken);
+
+        await _context.Entry(attempt.Quiz)
+            .Collection(q => q.Questions)
+            .Query()
+            .Include(question => question.Options)
+            .LoadAsync(cancellationToken);
+
+        await _context.Entry(attempt)
+            .Collection(a => a.Answers)
+            .Query()
+            .Include(answer => answer.Question)
+            .ThenInclude(question => question.Options)
+            .Include(answer => answer.SelectedOptions)
+            .ThenInclude(selectedOption => selectedOption.QuestionOption)
+            .LoadAsync(cancellationToken);
+
+        return attempt;
+    }
+
+    private static StudentAnswer CreateStudentAnswer(
+        Question question,
+        Guid attemptId,
+        SubmitStudentAnswerDto? submittedAnswer)
+    {
+        var answer = new StudentAnswer
+        {
+            QuizAttemptId = attemptId,
+            QuestionId = question.Id,
+            Question = question
+        };
+
+        if (QuestionValidation.IsObjective(question.Type))
+        {
+            ValidateObjectiveSubmission(question, submittedAnswer);
+
+            var selectedOptionIds = (submittedAnswer?.SelectedOptionIds ?? new List<Guid>())
+                .Distinct()
+                .ToList();
+            answer.SelectedOptions = question.Options
+                .Where(o => selectedOptionIds.Contains(o.Id))
+                .Select(o => new StudentAnswerOption
+                {
+                    QuestionOptionId = o.Id,
+                    QuestionOption = o
+                })
+                .ToList();
+
+            var correctOptionIds = question.Options
+                .Where(o => o.IsCorrect)
+                .Select(o => o.Id)
+                .OrderBy(id => id)
+                .ToList();
+
+            var normalizedSelectedIds = selectedOptionIds
+                .Distinct()
+                .OrderBy(id => id)
+                .ToList();
+
+            var isCorrect = correctOptionIds.SequenceEqual(normalizedSelectedIds);
+
+            answer.IsCorrect = isCorrect;
+            answer.AwardedMarks = isCorrect ? question.Marks : 0;
+            answer.ReviewStatus = StudentAnswerReviewStatus.NotRequired;
+            return answer;
+        }
+
+        ValidateSubjectiveSubmission(question, submittedAnswer);
+
+        answer.AnswerText = string.IsNullOrWhiteSpace(submittedAnswer?.AnswerText) ? null : submittedAnswer.AnswerText.Trim();
+        answer.FileReference = string.IsNullOrWhiteSpace(submittedAnswer?.FileReference) ? null : submittedAnswer.FileReference.Trim();
+        answer.IsCorrect = null;
+        answer.AwardedMarks = 0;
+
+        var hasContent = !string.IsNullOrWhiteSpace(answer.AnswerText) || !string.IsNullOrWhiteSpace(answer.FileReference);
+        answer.ReviewStatus = hasContent
+            ? StudentAnswerReviewStatus.PendingReview
+            : StudentAnswerReviewStatus.Reviewed;
+
+        return answer;
+    }
+
+    private static void ValidateObjectiveSubmission(Question question, SubmitStudentAnswerDto? submittedAnswer)
+    {
+        if (!string.IsNullOrWhiteSpace(submittedAnswer?.AnswerText) || !string.IsNullOrWhiteSpace(submittedAnswer?.FileReference))
+        {
+            throw new InvalidOperationException("Objective questions can only be answered by selecting options.");
+        }
+
+        var selectedOptionIds = (submittedAnswer?.SelectedOptionIds ?? new List<Guid>())
+            .Distinct()
+            .ToList();
+        if (selectedOptionIds.Count == 0)
+        {
+            return;
+        }
+
+        var validOptionIds = question.Options.Select(o => o.Id).ToHashSet();
+        if (selectedOptionIds.Any(id => !validOptionIds.Contains(id)))
+        {
+            throw new InvalidOperationException("Submission contains invalid question options.");
+        }
+
+        if ((question.Type == QuestionType.SingleMcq || question.Type == QuestionType.TrueFalse) &&
+            selectedOptionIds.Distinct().Count() > 1)
+        {
+            throw new InvalidOperationException("This question accepts only one option.");
+        }
+    }
+
+    private static void ValidateSubjectiveSubmission(Question question, SubmitStudentAnswerDto? submittedAnswer)
+    {
+        var hasSelectedOptions = submittedAnswer?.SelectedOptionIds.Count > 0;
+        if (hasSelectedOptions)
+        {
+            throw new InvalidOperationException("Subjective questions cannot be answered using options.");
+        }
+
+        if (question.Type == QuestionType.FileUpload &&
+            submittedAnswer != null &&
+            !string.IsNullOrWhiteSpace(submittedAnswer.AnswerText))
+        {
+            throw new InvalidOperationException("File upload questions only accept a file reference.");
+        }
+
+        if ((question.Type == QuestionType.ShortAnswer || question.Type == QuestionType.Essay) &&
+            submittedAnswer != null &&
+            !string.IsNullOrWhiteSpace(submittedAnswer.FileReference))
+        {
+            throw new InvalidOperationException("Text-based questions do not accept a file reference.");
+        }
+    }
+
+    private static void RecalculateAttemptOutcome(QuizAttempt attempt)
+    {
+        attempt.Score = attempt.Answers.Sum(a => a.AwardedMarks);
+
+        var hasPendingReview = attempt.Answers.Any(a => a.ReviewStatus == StudentAnswerReviewStatus.PendingReview);
+        if (attempt.Status == QuizAttemptStatus.Expired)
+        {
+            return;
+        }
+
+        attempt.Status = hasPendingReview ? QuizAttemptStatus.PendingReview : QuizAttemptStatus.Graded;
+        attempt.ReviewedAt = hasPendingReview ? null : DateTime.UtcNow;
+    }
+
+    private static QuizResponseDto ToQuizResponseDto(Quiz quiz) =>
+        new()
         {
             Id = quiz.Id,
             CourseId = quiz.CourseId,
             Title = quiz.Title,
+            Description = quiz.Description,
             DurationMinutes = quiz.DurationMinutes,
+            StartTimeUtc = quiz.StartTimeUtc,
+            EndTimeUtc = quiz.EndTimeUtc,
             TotalMarks = quiz.TotalMarks,
-            PassingMarks = quiz.PassingMarks,
+            RandomizeQuestions = quiz.RandomizeQuestions,
+            AllowMultipleAttempts = quiz.AllowMultipleAttempts,
             IsPublished = quiz.IsPublished,
-            CreatedAt = quiz.CreatedAt
+            AreResultsPublished = quiz.AreResultsPublished,
+            QuestionCount = quiz.Questions.Count,
+            AttemptCount = quiz.Attempts.Count,
+            CreatedAt = quiz.CreatedAt,
+            UpdatedAt = quiz.UpdatedAt
         };
+
+    private static QuestionResponseDto ToQuestionResponseDto(Question question) =>
+        new()
+        {
+            Id = question.Id,
+            QuizId = question.QuizId,
+            Text = question.Text,
+            Type = question.Type,
+            Marks = question.Marks,
+            OrderIndex = question.OrderIndex,
+            Options = question.Options
+                .OrderBy(o => o.OrderIndex)
+                .Select(o => new QuestionOptionResponseDto
+                {
+                    Id = o.Id,
+                    Text = o.Text,
+                    IsCorrect = o.IsCorrect,
+                    OrderIndex = o.OrderIndex
+                })
+                .ToList()
+        };
+
+    private static StudentQuizDetailDto ToStudentQuizDetailDto(Quiz quiz, string studentId, bool randomizeQuestions)
+    {
+        var questions = quiz.Questions
+            .OrderBy(q => q.OrderIndex)
+            .Select(q => new StudentQuestionDto
+            {
+                Id = q.Id,
+                Text = q.Text,
+                Type = q.Type,
+                Marks = q.Marks,
+                OrderIndex = q.OrderIndex,
+                Options = q.Options
+                    .OrderBy(o => o.OrderIndex)
+                    .Select(o => new StudentQuestionOptionDto
+                    {
+                        Id = o.Id,
+                        Text = o.Text,
+                        OrderIndex = o.OrderIndex
+                    })
+                    .ToList()
+            })
+            .ToList();
+
+        if (randomizeQuestions)
+        {
+            questions = questions.OrderBy(_ => Random.Shared.Next()).ToList();
+        }
+
+        return new StudentQuizDetailDto
+        {
+            QuizId = quiz.Id,
+            CourseId = quiz.CourseId,
+            CourseTitle = quiz.Course.Title,
+            Title = quiz.Title,
+            Description = quiz.Description,
+            DurationMinutes = quiz.DurationMinutes,
+            StartTimeUtc = quiz.StartTimeUtc,
+            EndTimeUtc = quiz.EndTimeUtc,
+            TotalMarks = quiz.TotalMarks,
+            RandomizeQuestions = quiz.RandomizeQuestions,
+            AllowMultipleAttempts = quiz.AllowMultipleAttempts,
+            AttemptCount = quiz.Attempts.Count(a => a.StudentId == studentId),
+            Questions = questions
+        };
+    }
+
+    private static QuizAttemptDetailDto ToTeacherAttemptDetailDto(QuizAttempt attempt) =>
+        new()
+        {
+            AttemptId = attempt.Id,
+            QuizId = attempt.QuizId,
+            QuizTitle = attempt.Quiz.Title,
+            StudentId = attempt.StudentId,
+            StudentName = BuildFullName(attempt.Student.FirstName, attempt.Student.LastName, attempt.Student.UserName),
+            AttemptNumber = attempt.AttemptNumber,
+            Status = attempt.Status,
+            StartedAt = attempt.StartedAt,
+            DeadlineUtc = attempt.DeadlineUtc,
+            SubmittedAt = attempt.SubmittedAt,
+            Score = attempt.Score,
+            ResultsPublished = attempt.Quiz.AreResultsPublished,
+            Answers = attempt.Answers
+                .OrderBy(a => a.Question.OrderIndex)
+                .Select(a => ToAttemptAnswerDto(a, includeResults: true))
+                .ToList()
+        };
+
+    private static QuizAttemptDetailDto ToStudentAttemptDetailDto(QuizAttempt attempt)
+    {
+        var includeResults = attempt.Quiz.AreResultsPublished;
+
+        return new QuizAttemptDetailDto
+        {
+            AttemptId = attempt.Id,
+            QuizId = attempt.QuizId,
+            QuizTitle = attempt.Quiz.Title,
+            StudentId = attempt.StudentId,
+            StudentName = BuildFullName(attempt.Student.FirstName, attempt.Student.LastName, attempt.Student.UserName),
+            AttemptNumber = attempt.AttemptNumber,
+            Status = attempt.Status,
+            StartedAt = attempt.StartedAt,
+            DeadlineUtc = attempt.DeadlineUtc,
+            SubmittedAt = attempt.SubmittedAt,
+            Score = includeResults ? attempt.Score : null,
+            ResultsPublished = includeResults,
+            Answers = attempt.Answers
+                .OrderBy(a => a.Question.OrderIndex)
+                .Select(a => ToAttemptAnswerDto(a, includeResults))
+                .ToList()
+        };
+    }
+
+    private static QuizAttemptAnswerDto ToAttemptAnswerDto(StudentAnswer answer, bool includeResults) =>
+        new()
+        {
+            AnswerId = answer.Id,
+            QuestionId = answer.QuestionId,
+            QuestionText = answer.Question.Text,
+            QuestionType = answer.Question.Type,
+            MaxMarks = answer.Question.Marks,
+            SelectedOptionIds = answer.SelectedOptions.Select(o => o.QuestionOptionId).ToList(),
+            SelectedOptionTexts = answer.SelectedOptions
+                .OrderBy(o => o.QuestionOption.OrderIndex)
+                .Select(o => o.QuestionOption.Text)
+                .ToList(),
+            AnswerText = answer.AnswerText,
+            FileReference = answer.FileReference,
+            IsCorrect = includeResults ? answer.IsCorrect : null,
+            AwardedMarks = includeResults ? answer.AwardedMarks : null,
+            ReviewStatus = includeResults ? answer.ReviewStatus : HidePendingStatus(answer.ReviewStatus),
+            TeacherFeedback = includeResults ? answer.TeacherFeedback : null,
+            Options = includeResults
+                ? answer.Question.Options
+                    .OrderBy(o => o.OrderIndex)
+                    .Select(o => new QuestionOptionResponseDto
+                    {
+                        Id = o.Id,
+                        Text = o.Text,
+                        IsCorrect = o.IsCorrect,
+                        OrderIndex = o.OrderIndex
+                    })
+                    .ToList()
+                : new List<QuestionOptionResponseDto>()
+        };
+
+    private static StudentAnswerReviewStatus HidePendingStatus(StudentAnswerReviewStatus reviewStatus) =>
+        reviewStatus == StudentAnswerReviewStatus.PendingReview
+            ? StudentAnswerReviewStatus.PendingReview
+            : StudentAnswerReviewStatus.NotRequired;
+
+    private static DateTime EnsureUtc(DateTime value) =>
+        value.Kind == DateTimeKind.Utc ? value : value.ToUniversalTime();
+
+    private static string BuildFullName(string? firstName, string? lastName, string? fallback)
+    {
+        var fullName = string.Join(" ", new[] { firstName, lastName }.Where(part => !string.IsNullOrWhiteSpace(part)));
+        return string.IsNullOrWhiteSpace(fullName) ? (fallback ?? string.Empty) : fullName;
     }
 }
