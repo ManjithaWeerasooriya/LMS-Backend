@@ -4,6 +4,7 @@ using LMS_Backend.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace LMS_Backend.Migrations
 {
     [DbContext(typeof(ApplicationDBContext))]
-    partial class ApplicationDBContextModelSnapshot : ModelSnapshot
+    [Migration("20260330064624_FixMaterialCourseRelation")]
+    partial class FixMaterialCourseRelation
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -273,92 +276,11 @@ namespace LMS_Backend.Migrations
                     b.ToTable("Materials");
                 });
 
-            modelBuilder.Entity("LMS_Backend.Models.Entities.Question", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
-
-                    b.Property<decimal>("Marks")
-                        .HasColumnType("decimal(10,2)");
-
-                    b.Property<int>("OrderIndex")
-                        .HasColumnType("int");
-
-                    b.Property<Guid>("QuizId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Text")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("nvarchar(4000)");
-
-                    b.Property<int>("Type")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("QuizId", "OrderIndex");
-
-                    b.ToTable("Questions", (string)null);
-                });
-
-            modelBuilder.Entity("LMS_Backend.Models.Entities.QuestionOption", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<bool>("IsCorrect")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
-
-                    b.Property<int>("OrderIndex")
-                        .HasColumnType("int");
-
-                    b.Property<Guid>("QuestionId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Text")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("QuestionId", "OrderIndex");
-
-                    b.ToTable("QuestionOptions", (string)null);
-                });
-
             modelBuilder.Entity("LMS_Backend.Models.Entities.Quiz", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
-
-                    b.Property<bool>("AllowMultipleAttempts")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("AreResultsPublished")
-                        .HasColumnType("bit");
 
                     b.Property<Guid>("CourseId")
                         .HasColumnType("uniqueidentifier");
@@ -366,47 +288,28 @@ namespace LMS_Backend.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(4000)
-                        .HasColumnType("nvarchar(4000)");
-
                     b.Property<int>("DurationMinutes")
                         .HasColumnType("int");
-
-                    b.Property<DateTime>("EndTimeUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("bit");
 
                     b.Property<bool>("IsPublished")
                         .HasColumnType("bit");
 
-                    b.Property<bool>("RandomizeQuestions")
-                        .HasColumnType("bit");
-
-                    b.Property<DateTime>("StartTimeUtc")
-                        .HasColumnType("datetime2");
+                    b.Property<int>("PassingMarks")
+                        .HasColumnType("int");
 
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
-                    b.Property<decimal>("TotalMarks")
-                        .HasColumnType("decimal(10,2)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
+                    b.Property<int>("TotalMarks")
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
                     b.HasIndex("CourseId");
 
-                    b.ToTable("Quizzes", (string)null);
+                    b.ToTable("Quizzes");
                 });
 
             modelBuilder.Entity("LMS_Backend.Models.Entities.QuizAttempt", b =>
@@ -415,42 +318,26 @@ namespace LMS_Backend.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<int>("AttemptNumber")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("DeadlineUtc")
+                    b.Property<DateTime>("CompletedAt")
                         .HasColumnType("datetime2");
 
                     b.Property<Guid>("QuizId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<DateTime?>("ReviewedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<decimal>("Score")
-                        .HasColumnType("decimal(10,2)");
-
-                    b.Property<DateTime>("StartedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("Status")
+                    b.Property<int>("Score")
                         .HasColumnType("int");
 
                     b.Property<string>("StudentId")
                         .IsRequired()
                         .HasColumnType("nvarchar(450)");
 
-                    b.Property<DateTime?>("SubmittedAt")
-                        .HasColumnType("datetime2");
-
                     b.HasKey("Id");
+
+                    b.HasIndex("QuizId");
 
                     b.HasIndex("StudentId");
 
-                    b.HasIndex("QuizId", "StudentId", "AttemptNumber")
-                        .IsUnique();
-
-                    b.ToTable("QuizAttempts", (string)null);
+                    b.ToTable("QuizAttempts");
                 });
 
             modelBuilder.Entity("LMS_Backend.Models.Entities.RefreshToken", b =>
@@ -495,74 +382,6 @@ namespace LMS_Backend.Migrations
                         .IsUnique();
 
                     b.ToTable("RefreshTokens");
-                });
-
-            modelBuilder.Entity("LMS_Backend.Models.Entities.StudentAnswer", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("AnswerText")
-                        .HasMaxLength(8000)
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<decimal>("AwardedMarks")
-                        .HasColumnType("decimal(10,2)");
-
-                    b.Property<string>("FileReference")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
-
-                    b.Property<bool?>("IsCorrect")
-                        .HasColumnType("bit");
-
-                    b.Property<Guid>("QuestionId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("QuizAttemptId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("ReviewStatus")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("ReviewedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("TeacherFeedback")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("QuestionId");
-
-                    b.HasIndex("QuizAttemptId", "QuestionId")
-                        .IsUnique();
-
-                    b.ToTable("StudentAnswers", (string)null);
-                });
-
-            modelBuilder.Entity("LMS_Backend.Models.Entities.StudentAnswerOption", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("QuestionOptionId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("StudentAnswerId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("QuestionOptionId");
-
-                    b.HasIndex("StudentAnswerId", "QuestionOptionId")
-                        .IsUnique();
-
-                    b.ToTable("StudentAnswerOptions", (string)null);
                 });
 
             modelBuilder.Entity("LMS_Backend.Models.Entities.User", b =>
@@ -870,28 +689,6 @@ namespace LMS_Backend.Migrations
                     b.Navigation("Course");
                 });
 
-            modelBuilder.Entity("LMS_Backend.Models.Entities.Question", b =>
-                {
-                    b.HasOne("LMS_Backend.Models.Entities.Quiz", "Quiz")
-                        .WithMany("Questions")
-                        .HasForeignKey("QuizId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Quiz");
-                });
-
-            modelBuilder.Entity("LMS_Backend.Models.Entities.QuestionOption", b =>
-                {
-                    b.HasOne("LMS_Backend.Models.Entities.Question", "Question")
-                        .WithMany("Options")
-                        .HasForeignKey("QuestionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Question");
-                });
-
             modelBuilder.Entity("LMS_Backend.Models.Entities.Quiz", b =>
                 {
                     b.HasOne("LMS_Backend.Models.Entities.Course", "Course")
@@ -931,44 +728,6 @@ namespace LMS_Backend.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("LMS_Backend.Models.Entities.StudentAnswer", b =>
-                {
-                    b.HasOne("LMS_Backend.Models.Entities.Question", "Question")
-                        .WithMany("Answers")
-                        .HasForeignKey("QuestionId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("LMS_Backend.Models.Entities.QuizAttempt", "QuizAttempt")
-                        .WithMany("Answers")
-                        .HasForeignKey("QuizAttemptId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Question");
-
-                    b.Navigation("QuizAttempt");
-                });
-
-            modelBuilder.Entity("LMS_Backend.Models.Entities.StudentAnswerOption", b =>
-                {
-                    b.HasOne("LMS_Backend.Models.Entities.QuestionOption", "QuestionOption")
-                        .WithMany("SelectedByAnswers")
-                        .HasForeignKey("QuestionOptionId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("LMS_Backend.Models.Entities.StudentAnswer", "StudentAnswer")
-                        .WithMany("SelectedOptions")
-                        .HasForeignKey("StudentAnswerId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("QuestionOption");
-
-                    b.Navigation("StudentAnswer");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
@@ -1038,33 +797,9 @@ namespace LMS_Backend.Migrations
                     b.Navigation("Quizzes");
                 });
 
-            modelBuilder.Entity("LMS_Backend.Models.Entities.Question", b =>
-                {
-                    b.Navigation("Answers");
-
-                    b.Navigation("Options");
-                });
-
-            modelBuilder.Entity("LMS_Backend.Models.Entities.QuestionOption", b =>
-                {
-                    b.Navigation("SelectedByAnswers");
-                });
-
             modelBuilder.Entity("LMS_Backend.Models.Entities.Quiz", b =>
                 {
                     b.Navigation("Attempts");
-
-                    b.Navigation("Questions");
-                });
-
-            modelBuilder.Entity("LMS_Backend.Models.Entities.QuizAttempt", b =>
-                {
-                    b.Navigation("Answers");
-                });
-
-            modelBuilder.Entity("LMS_Backend.Models.Entities.StudentAnswer", b =>
-                {
-                    b.Navigation("SelectedOptions");
                 });
 #pragma warning restore 612, 618
         }

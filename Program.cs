@@ -15,6 +15,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Microsoft.AspNetCore.Http;
 
 LoadEnvFile();
 
@@ -45,6 +46,7 @@ builder.Services.AddControllers()
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IPublicService, PublicService>();
 builder.Services.AddScoped<IQuizService, QuizService>();
+builder.Services.AddScoped<AzureStorageService>();
 
 // CORS
 builder.Services.AddCors(options =>
@@ -137,6 +139,13 @@ builder.Services.AddSwaggerGen(options =>
         Version = "v1",
         Description = "Learning Management System backend endpoints"
     });
+
+    options.MapType<IFormFile>(() => new OpenApiSchema
+    {
+        Type = "string",
+        Format = "binary"
+    });
+    options.OperationFilter<FileUploadOperationFilter>();
 
     var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
     var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
