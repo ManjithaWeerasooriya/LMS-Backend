@@ -1,6 +1,4 @@
-using System.Security.Claims;
 using LMS_Backend.Infrastructure.Auth;
-using LMS_Backend.Models.DTOs.Student;
 using LMS_Backend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -10,26 +8,72 @@ namespace LMS_Backend.Controllers;
 [ApiController]
 [Route("api/v1/student/dashboard")]
 [Authorize(Policy = AppPolicies.StudentOnly)]
-public class StudentDashboardController : ControllerBase
+public class StudentDashboardController : ApiControllerBase
 {
-    private readonly StudentDashboardService _dashboardService;
+    private readonly IQuizService _quizService;
 
-    public StudentDashboardController(StudentDashboardService dashboardService)
+    public StudentDashboardController(IQuizService quizService)
     {
-        _dashboardService = dashboardService;
+        _quizService = quizService;
     }
 
-    [HttpGet]
-    public async Task<ActionResult<StudentDashboardResponseDto>> GetDashboard(
-        CancellationToken cancellationToken)
+    [HttpGet("quiz-scores")]
+    public async Task<IActionResult> GetQuizScores(CancellationToken cancellationToken)
     {
-        var studentId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var studentId = GetCurrentUserId();
         if (string.IsNullOrWhiteSpace(studentId))
         {
-            return Unauthorized();
+            return UnauthorizedResponse();
         }
 
-        var dashboard = await _dashboardService.GetDashboardAsync(studentId, cancellationToken);
-        return Ok(dashboard);
+        try
+        {
+            var result = await _quizService.GetStudentQuizScoresByCourseAsync(studentId, cancellationToken);
+            return Success(result, "Student quiz scores retrieved successfully.");
+        }
+        catch (Exception ex)
+        {
+            return HandleException(ex);
+        }
+    }
+
+    [HttpGet("average-score")]
+    public async Task<IActionResult> GetAverageScore(CancellationToken cancellationToken)
+    {
+        var studentId = GetCurrentUserId();
+        if (string.IsNullOrWhiteSpace(studentId))
+        {
+            return UnauthorizedResponse();
+        }
+
+        try
+        {
+            var result = await _quizService.GetStudentAverageScoreAsync(studentId, cancellationToken);
+            return Success(result, "Student average score retrieved successfully.");
+        }
+        catch (Exception ex)
+        {
+            return HandleException(ex);
+        }
+    }
+
+    [HttpGet("completion")]
+    public async Task<IActionResult> GetCompletion(CancellationToken cancellationToken)
+    {
+        var studentId = GetCurrentUserId();
+        if (string.IsNullOrWhiteSpace(studentId))
+        {
+            return UnauthorizedResponse();
+        }
+
+        try
+        {
+            var result = await _quizService.GetStudentCompletionAsync(studentId, cancellationToken);
+            return Success(result, "Student completion retrieved successfully.");
+        }
+        catch (Exception ex)
+        {
+            return HandleException(ex);
+        }
     }
 }
