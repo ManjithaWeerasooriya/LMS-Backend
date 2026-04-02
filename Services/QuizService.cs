@@ -1,5 +1,6 @@
 using LMS_Backend.Data;
 using LMS_Backend.Models.DTOs.Quiz;
+using LMS_Backend.Models.DTOs.Student;
 using LMS_Backend.Models.Entities;
 using LMS_Backend.Models.Exceptions;
 using Microsoft.EntityFrameworkCore;
@@ -498,6 +499,200 @@ public class QuizService : IQuizService
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<StudentCourseQuizResultsDto>> GetStudentQuizScoresByCourseAsync(
+        string studentId,
+        CancellationToken cancellationToken)
+    {
+        var enrolledCourses = await _context.CourseEnrollments
+            .AsNoTracking()
+            .Where(e => e.StudentId == studentId && e.Course.Status == CourseStatus.Active)
+            .Select(e => new
+            {
+                e.CourseId,
+                CourseTitle = e.Course.Title
+            })
+            .ToListAsync(cancellationToken);
+
+        var courseIds = enrolledCourses.Select(c => c.CourseId).ToList();
+
+        var publishedQuizzes = await _context.Quizzes
+            .AsNoTracking()
+            .Where(q =>
+                courseIds.Contains(q.CourseId) &&
+                q.IsPublished &&
+                !q.IsDeleted)
+            .Select(q => new
+            {
+                q.Id,
+                q.CourseId,
+                q.Title,
+                q.TotalMarks,
+                q.AreResultsPublished
+            })
+            .ToListAsync(cancellationToken);
+
+        var bestAttempts = await _context.QuizAttempts
+            .AsNoTracking()
+            .Where(a =>
+                a.StudentId == studentId &&
+                (a.Status == QuizAttemptStatus.Submitted ||
+                 a.Status == QuizAttemptStatus.PendingReview ||
+                 a.Status == QuizAttemptStatus.Graded))
+            .GroupBy(a => a.QuizId)
+            .Select(g => g
+                .OrderByDescending(a => a.Score)
+                .ThenByDescending(a => a.SubmittedAt)
+                .ThenByDescending(a => a.AttemptNumber)
+                .First())
+            .Select(a => new
+            {
+                a.QuizId,
+                a.Score,
+                a.SubmittedAt,
+                a.AttemptNumber,
+                a.Status
+            })
+            .ToListAsync(cancellationToken);
+
+        var attemptsByQuizId = bestAttempts.ToDictionary(a => a.QuizId, a => a);
+
+        var result = enrolledCourses
+            .Select(course =>
+            {
+                var courseQuizzes = publishedQuizzes
+                    .Where(q => q.CourseId == course.CourseId)
+                    .ToList();
+
+                var visibleQuizResults = courseQuizzes
+                    .Where(q => q.AreResultsPublished && attemptsByQuizId.ContainsKey(q.Id))
+                    .Select(q =>
+                    {
+                        var attempt = attemptsByQuizId[q.Id];
+
+                        return new StudentQuizScoreItemDto
+                        {
+                            QuizId = q.Id,
+                            QuizTitle = q.Title,
+                            Score = attempt.Score,
+                            TotalMarks = q.TotalMarks,
+                            SubmittedAt = attempt.SubmittedAt,
+                            AttemptNumber = attempt.AttemptNumber,
+                            Status = attempt.Status.ToString()
+                        };
+                    })
+                    .OrderByDescending(x => x.SubmittedAt)
+                    .ToList();
+
+                var attemptedQuizIds = courseQuizzes
+                    .Where(q => attemptsByQuizId.ContainsKey(q.Id))
+                    .Select(q => q.Id)
+                    .Distinct()
+                    .Count();
+
+                var average = visibleQuizResults.Count == 0
+                    ? 0
+                    : Math.Round(visibleQuizResults.Average(x => x.Score), 2);
+
+                var totalQuizzes = courseQuizzes.Count;
+                var progress = totalQuizzes == 0
+                    ? 0
+                    : Math.Round((double)attemptedQuizIds * 100d / totalQuizzes, 2);
+
+                return new StudentCourseQuizResultsDto
+                {
+                    CourseId = course.CourseId,
+                    CourseTitle = course.CourseTitle,
+                    AttemptedQuizzes = attemptedQuizIds,
+                    TotalQuizzes = totalQuizzes,
+                    ProgressPercentage = progress,
+                    CourseAverageScore = average,
+                    Quizzes = visibleQuizResults
+                };
+            })
+            .OrderBy(x => x.CourseTitle)
+            .ToList();
+
+        return result;
+    }
+
+    public async Task<StudentAverageScoreDto> GetStudentAverageScoreAsync(
+        string studentId,
+        CancellationToken cancellationToken)
+    {
+        var bestVisibleAttempts = await _context.QuizAttempts
+            .AsNoTracking()
+            .Where(a =>
+                a.StudentId == studentId &&
+                a.Quiz.AreResultsPublished &&
+                a.Quiz.IsPublished &&
+                !a.Quiz.IsDeleted &&
+                a.Quiz.Course.Status == CourseStatus.Active &&
+                (a.Status == QuizAttemptStatus.Submitted ||
+                 a.Status == QuizAttemptStatus.PendingReview ||
+                 a.Status == QuizAttemptStatus.Graded))
+            .GroupBy(a => a.QuizId)
+            .Select(g => g
+                .OrderByDescending(a => a.Score)
+                .ThenByDescending(a => a.SubmittedAt)
+                .ThenByDescending(a => a.AttemptNumber)
+                .Select(a => a.Score)
+                .First())
+            .ToListAsync(cancellationToken);
+
+        var average = bestVisibleAttempts.Count == 0
+            ? 0
+            : Math.Round(bestVisibleAttempts.Average(), 2);
+
+        return new StudentAverageScoreDto
+        {
+            AverageScore = average
+        };
+    }
+
+    public async Task<StudentCompletionDto> GetStudentCompletionAsync(
+        string studentId,
+        CancellationToken cancellationToken)
+    {
+        var enrolledCourseIds = await _context.CourseEnrollments
+            .AsNoTracking()
+            .Where(e => e.StudentId == studentId && e.Course.Status == CourseStatus.Active)
+            .Select(e => e.CourseId)
+            .ToListAsync(cancellationToken);
+
+        var totalQuizzes = await _context.Quizzes
+            .AsNoTracking()
+            .Where(q =>
+                enrolledCourseIds.Contains(q.CourseId) &&
+                q.IsPublished &&
+                !q.IsDeleted)
+            .CountAsync(cancellationToken);
+
+        var attemptedQuizIds = await _context.QuizAttempts
+            .AsNoTracking()
+            .Where(a =>
+                a.StudentId == studentId &&
+                enrolledCourseIds.Contains(a.Quiz.CourseId) &&
+                a.Quiz.IsPublished &&
+                !a.Quiz.IsDeleted &&
+                (a.Status == QuizAttemptStatus.Submitted ||
+                 a.Status == QuizAttemptStatus.PendingReview ||
+                 a.Status == QuizAttemptStatus.Graded))
+            .Select(a => a.QuizId)
+            .Distinct()
+            .CountAsync(cancellationToken);
+
+        var completion = totalQuizzes == 0
+            ? 0
+            : Math.Round((double)attemptedQuizIds * 100d / totalQuizzes, 2);
+
+        return new StudentCompletionDto
+        {
+            AttemptedQuizzes = attemptedQuizIds,
+            TotalQuizzes = totalQuizzes,
+            CompletionPercentage = completion
+        };
+    }
+
     public async Task<StudentQuizDetailDto> GetStudentQuizByIdAsync(
         string studentId,
         Guid quizId,
@@ -888,6 +1083,7 @@ public class QuizService : IQuizService
             var selectedOptionIds = (submittedAnswer?.SelectedOptionIds ?? new List<Guid>())
                 .Distinct()
                 .ToList();
+
             answer.SelectedOptions = question.Options
                 .Where(o => selectedOptionIds.Contains(o.Id))
                 .Select(o => new StudentAnswerOption
@@ -941,6 +1137,7 @@ public class QuizService : IQuizService
         var selectedOptionIds = (submittedAnswer?.SelectedOptionIds ?? new List<Guid>())
             .Distinct()
             .ToList();
+
         if (selectedOptionIds.Count == 0)
         {
             return;
