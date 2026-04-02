@@ -38,4 +38,24 @@ public class AzureStorageService
             BlobName = blobName
         };
     }
+
+    public async Task<(Stream Stream, string ContentType)> DownloadFileAsync(string blobName)
+    {
+        var blobServiceClient = new BlobServiceClient(_connectionString);
+        var containerClient = blobServiceClient.GetBlobContainerClient(_containerName);
+        var blobClient = containerClient.GetBlobClient(blobName);
+
+        if (!await blobClient.ExistsAsync())
+            throw new FileNotFoundException("Blob not found.");
+
+        var response = await blobClient.DownloadStreamingAsync();
+
+        var contentType = response.Value.Details.ContentType;
+        if (string.IsNullOrWhiteSpace(contentType))
+        {
+            contentType = "application/octet-stream";
+        }
+
+        return (response.Value.Content, contentType);
+    }
 }

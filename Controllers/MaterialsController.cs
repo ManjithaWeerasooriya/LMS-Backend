@@ -15,6 +15,28 @@ public class MaterialsController : ControllerBase
     private readonly AzureStorageService _azureStorageService;
     private readonly ApplicationDBContext _dbContext;
 
+    private static readonly string[] AllowedExtensions =
+    {
+        ".pdf", ".doc", ".docx", ".ppt", ".pptx", ".zip",
+        ".mp4", ".avi", ".mov", ".mkv"
+    };
+
+    private static readonly string[] AllowedContentTypes =
+    {
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.ms-powerpoint",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/zip",
+        "video/mp4",
+        "video/x-msvideo",
+        "video/quicktime",
+        "video/x-matroska"
+    };
+
+    private const long MaxFileSizeBytes = 50 * 1024 * 1024; // 50 MB
+
     public MaterialsController(
         AzureStorageService azureStorageService,
         ApplicationDBContext dbContext)
@@ -23,7 +45,6 @@ public class MaterialsController : ControllerBase
         _dbContext = dbContext;
     }
 
-    // ✅ UPLOAD
     [HttpPost("upload")]
     [Authorize(Roles = "Teacher")]
     [Consumes("multipart/form-data")]
@@ -32,39 +53,44 @@ public class MaterialsController : ControllerBase
         [FromForm] string? title,
         [FromForm] Guid courseId)
     {
-        // 🔴 Validation
         if (file == null || file.Length == 0)
             return BadRequest("No file uploaded.");
 
         if (courseId == Guid.Empty)
             return BadRequest("Invalid courseId.");
 
-        // 🔐 Get user
+        if (file.Length > MaxFileSizeBytes)
+            return BadRequest("File too large. Maximum allowed size is 50 MB.");
+
+        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(extension) || !AllowedExtensions.Contains(extension))
+            return BadRequest("Invalid file type.");
+
+        var contentType = file.ContentType?.Trim() ?? "application/octet-stream";
+        if (!AllowedContentTypes.Contains(contentType))
+            return BadRequest("Invalid content type.");
+
         var userId = GetCurrentUserId();
         if (string.IsNullOrEmpty(userId))
             return Unauthorized();
 
-        // 🔐 Check ownership
         var ownsCourse = await IsTeacherOwnerOfCourse(userId, courseId);
         if (!ownsCourse)
             return Forbid();
 
-        // 📤 Upload file
         var uploadResult = await _azureStorageService.UploadFileAsync(file);
 
-        // 🧠 Auto title fallback
         var finalTitle = string.IsNullOrWhiteSpace(title)
             ? Path.GetFileNameWithoutExtension(file.FileName)
             : title;
 
-        // 💾 Save to DB
         var material = new Material
         {
             Title = finalTitle,
             FileUrl = uploadResult.FileUrl,
             BlobName = uploadResult.BlobName,
-            ContentType = file.ContentType ?? "application/octet-stream",
-            MaterialType = GetMaterialType(file.ContentType, file.FileName),
+            ContentType = contentType,
+            MaterialType = GetMaterialType(contentType, file.FileName),
             FileSize = file.Length,
             CourseId = courseId,
             CreatedAt = DateTime.UtcNow
@@ -84,7 +110,6 @@ public class MaterialsController : ControllerBase
         });
     }
 
-    // ✅ GET BY COURSE
     [HttpGet("course/{courseId:guid}")]
     [Authorize(Roles = "Teacher,Student")]
     public async Task<IActionResult> GetByCourse(Guid courseId)
@@ -108,7 +133,6 @@ public class MaterialsController : ControllerBase
         return Ok(materials);
     }
 
-    // ✅ GET BY ID
     [HttpGet("{id:int}")]
     [Authorize(Roles = "Teacher,Student")]
     public async Task<IActionResult> GetById(int id)
@@ -131,7 +155,6 @@ public class MaterialsController : ControllerBase
         return Ok(material);
     }
 
-    // ✅ DOWNLOAD
     [HttpGet("{id:int}/download")]
     [Authorize(Roles = "Teacher,Student")]
     public async Task<IActionResult> Download(int id)
@@ -151,10 +174,27 @@ public class MaterialsController : ControllerBase
         if (!allowed)
             return Forbid();
 
-        return Redirect(material.FileUrl);
+        try
+        {
+            var fileResult = await _azureStorageService.DownloadFileAsync(material.BlobName);
+
+            var fileName = material.Title;
+            var extension = Path.GetExtension(material.BlobName);
+
+            if (!string.IsNullOrWhiteSpace(extension) &&
+                !fileName.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
+            {
+                fileName += extension;
+            }
+
+            return File(fileResult.Stream, fileResult.ContentType, fileName);
+        }
+        catch (FileNotFoundException)
+        {
+            return NotFound("File not found in storage.");
+        }
     }
 
-    // 🔧 HELPERS
     private string? GetCurrentUserId()
     {
         return User.FindFirstValue(ClaimTypes.NameIdentifier);
