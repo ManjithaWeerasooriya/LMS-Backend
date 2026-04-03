@@ -1,6 +1,7 @@
 using LMS_Backend.Data;
 using LMS_Backend.Models.DTOs.Quiz;
 using LMS_Backend.Models.DTOs.Student;
+using LMS_Backend.Models.DTOs.Teacher;
 using LMS_Backend.Models.Entities;
 using LMS_Backend.Models.Exceptions;
 using Microsoft.EntityFrameworkCore;
@@ -190,6 +191,99 @@ public class QuizService : IQuizService
         await _context.SaveChangesAsync(cancellationToken);
 
         return await GetTeacherQuizByIdAsync(teacherId, quizId, cancellationToken);
+    }
+
+    public async Task<TeacherQuizAnalyticsDto> GetTeacherQuizAnalyticsAsync(
+        string teacherId,
+        Guid quizId,
+        CancellationToken cancellationToken)
+    {
+        var analyticsData = await GetTeacherManagedQuizQuery(teacherId)
+            .AsNoTracking()
+            .Where(q => q.Id == quizId)
+            .Select(q => new
+            {
+                q.Id,
+                QuizTitle = q.Title,
+                q.CourseId,
+                CourseTitle = q.Course.Title,
+                q.TotalMarks,
+                TotalEnrolledStudents = q.Course.Enrollments.Count(),
+                BestAttempts = q.Attempts
+                    .Where(a =>
+                        a.Status == QuizAttemptStatus.Submitted ||
+                        a.Status == QuizAttemptStatus.PendingReview ||
+                        a.Status == QuizAttemptStatus.Graded)
+                    .GroupBy(a => a.StudentId)
+                    .Select(g => g
+                        .OrderByDescending(a => a.Score)
+                        .ThenByDescending(a => a.SubmittedAt)
+                        .ThenByDescending(a => a.AttemptNumber)
+                        .Select(a => new
+                        {
+                            a.StudentId,
+                            a.Score
+                        })
+                        .First())
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (analyticsData == null)
+        {
+            await ThrowTeacherQuizAccessExceptionAsync(teacherId, quizId, cancellationToken);
+        }
+
+        var bestAttempts = analyticsData!.BestAttempts.ToList();
+        var studentsParticipated = bestAttempts.Count;
+        var totalEnrolledStudents = analyticsData.TotalEnrolledStudents;
+        var passMark = analyticsData.TotalMarks * 0.5m;
+
+        var averageScore = studentsParticipated == 0
+            ? 0m
+            : Math.Round(bestAttempts.Average(a => a.Score), 2);
+
+        var highestScore = studentsParticipated == 0
+            ? 0m
+            : bestAttempts.Max(a => a.Score);
+
+        var lowestScore = studentsParticipated == 0
+            ? 0m
+            : bestAttempts.Min(a => a.Score);
+
+        var passCount = studentsParticipated == 0
+            ? 0
+            : bestAttempts.Count(a => a.Score >= passMark);
+
+        var failCount = studentsParticipated - passCount;
+
+        var passPercentage = studentsParticipated == 0
+            ? 0
+            : Math.Round((double)passCount * 100d / studentsParticipated, 2);
+
+        var failPercentage = studentsParticipated == 0
+            ? 0
+            : Math.Round((double)failCount * 100d / studentsParticipated, 2);
+
+        var participationRate = totalEnrolledStudents == 0
+            ? 0
+            : Math.Round((double)studentsParticipated * 100d / totalEnrolledStudents, 2);
+
+        return new TeacherQuizAnalyticsDto
+        {
+            QuizId = analyticsData.Id,
+            QuizTitle = analyticsData.QuizTitle,
+            CourseId = analyticsData.CourseId,
+            CourseTitle = analyticsData.CourseTitle,
+            TotalMarks = analyticsData.TotalMarks,
+            AverageScore = averageScore,
+            HighestScore = highestScore,
+            LowestScore = lowestScore,
+            PassPercentage = passPercentage,
+            FailPercentage = failPercentage,
+            ParticipationRate = participationRate,
+            TotalEnrolledStudents = totalEnrolledStudents,
+            StudentsParticipated = studentsParticipated
+        };
     }
 
     public async Task<IReadOnlyList<QuestionResponseDto>> GetQuestionsAsync(

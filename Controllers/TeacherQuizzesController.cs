@@ -1,6 +1,7 @@
 using LMS_Backend.Infrastructure.Auth;
 using LMS_Backend.Models.DTOs.Common;
 using LMS_Backend.Models.DTOs.Quiz;
+using LMS_Backend.Models.DTOs.Teacher;
 using LMS_Backend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -56,6 +57,28 @@ public class TeacherQuizzesController : ApiControllerBase
         {
             var quiz = await _quizService.GetTeacherQuizByIdAsync(teacherId, quizId, cancellationToken);
             return Success(quiz, "Quiz retrieved successfully.");
+        }
+        catch (Exception ex)
+        {
+            return HandleException(ex);
+        }
+    }
+
+    [HttpGet("{quizId:guid}/analytics")]
+    public async Task<IActionResult> GetQuizAnalytics(
+        Guid quizId,
+        CancellationToken cancellationToken)
+    {
+        var teacherId = GetCurrentUserId();
+        if (string.IsNullOrWhiteSpace(teacherId))
+        {
+            return UnauthorizedResponse();
+        }
+
+        try
+        {
+            var analytics = await _quizService.GetTeacherQuizAnalyticsAsync(teacherId, quizId, cancellationToken);
+            return Success(analytics, "Quiz analytics retrieved successfully.");
         }
         catch (Exception ex)
         {
