@@ -1,4 +1,5 @@
 using LMS_Backend.Models.DTOs.Quiz;
+using LMS_Backend.Models.DTOs.Teacher;
 
 namespace LMS_Backend.Services;
 
@@ -10,6 +11,7 @@ public interface IQuizService
     Task<QuizResponseDto> UpdateQuizAsync(string teacherId, Guid quizId, UpdateQuizDto dto, CancellationToken cancellationToken);
     Task DeleteQuizAsync(string teacherId, Guid quizId, CancellationToken cancellationToken);
     Task<QuizResponseDto> SetResultsPublicationAsync(string teacherId, Guid quizId, bool publishResults, CancellationToken cancellationToken);
+    Task<TeacherQuizAnalyticsDto> GetTeacherQuizAnalyticsAsync(string teacherId, Guid quizId, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<QuestionResponseDto>> GetQuestionsAsync(string teacherId, Guid quizId, CancellationToken cancellationToken);
     Task<QuestionResponseDto> GetQuestionByIdAsync(string teacherId, Guid quizId, Guid questionId, CancellationToken cancellationToken);
