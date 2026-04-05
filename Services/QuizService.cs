@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using LMS_Backend.Data;
 using LMS_Backend.Models.DTOs.Quiz;
 using LMS_Backend.Models.DTOs.Student;
@@ -342,6 +343,8 @@ public class QuizService : IQuizService
         }
 
         EnsureQuizStructureCanChange(quiz);
+        var normalizedOptions = NormalizeQuestionOptions(dto.Options);
+        ValidateQuestionRequest(dto, normalizedOptions);
         EnsureQuestionOrderIsUnique(quiz.Questions, dto.OrderIndex, null);
         EnsureMarksBudget(quiz.TotalMarks, quiz.Questions.Sum(q => q.Marks) + dto.Marks);
 
@@ -353,15 +356,7 @@ public class QuizService : IQuizService
             Marks = dto.Marks,
             OrderIndex = dto.OrderIndex,
             CreatedAt = DateTime.UtcNow,
-            Options = dto.Options
-                .OrderBy(o => o.OrderIndex)
-                .Select(o => new QuestionOption
-                {
-                    Text = o.Text.Trim(),
-                    IsCorrect = o.IsCorrect,
-                    OrderIndex = o.OrderIndex
-                })
-                .ToList()
+            Options = BuildQuestionOptions(normalizedOptions)
         };
 
         _context.Questions.Add(question);
@@ -397,6 +392,8 @@ public class QuizService : IQuizService
             throw new NotFoundException("Question not found.");
         }
 
+        var normalizedOptions = NormalizeQuestionOptions(dto.Options);
+        ValidateQuestionRequest(dto, normalizedOptions);
         EnsureQuestionOrderIsUnique(quiz.Questions, dto.OrderIndex, questionId);
 
         var remainingMarks = quiz.Questions
@@ -417,16 +414,7 @@ public class QuizService : IQuizService
             option.DeletedAt = DateTime.UtcNow;
         }
 
-        question.Options = dto.Options
-            .OrderBy(o => o.OrderIndex)
-            .Select(o => new QuestionOption
-            {
-                QuestionId = question.Id,
-                Text = o.Text.Trim(),
-                IsCorrect = o.IsCorrect,
-                OrderIndex = o.OrderIndex
-            })
-            .ToList();
+        question.Options = BuildQuestionOptions(normalizedOptions, question.Id);
 
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -1285,6 +1273,75 @@ public class QuizService : IQuizService
 
         attempt.Status = hasPendingReview ? QuizAttemptStatus.PendingReview : QuizAttemptStatus.Graded;
         attempt.ReviewedAt = hasPendingReview ? null : DateTime.UtcNow;
+    }
+
+    private static IReadOnlyList<QuestionOptionRequestDto> NormalizeQuestionOptions(
+        List<QuestionOptionRequestDto>? options) =>
+        options ?? [];
+
+    private static void ValidateQuestionRequest(
+        object dto,
+        IReadOnlyList<QuestionOptionRequestDto> options)
+    {
+        var validationResults = new List<ValidationResult>();
+        ValidateObject(dto, validationResults);
+
+        foreach (var option in options)
+        {
+            ValidateObject(option, validationResults);
+        }
+
+        if (validationResults.Count == 0)
+        {
+            return;
+        }
+
+        var message = string.Join(
+            " ",
+            validationResults
+                .Select(result => result.ErrorMessage)
+                .Where(message => !string.IsNullOrWhiteSpace(message))
+                .Distinct(StringComparer.Ordinal));
+
+        throw new ArgumentException(
+            string.IsNullOrWhiteSpace(message)
+                ? "Question request is invalid."
+                : message);
+    }
+
+    private static void ValidateObject(
+        object instance,
+        ICollection<ValidationResult> validationResults) =>
+        Validator.TryValidateObject(
+            instance,
+            new ValidationContext(instance),
+            validationResults,
+            validateAllProperties: true);
+
+    private static List<QuestionOption> BuildQuestionOptions(
+        IEnumerable<QuestionOptionRequestDto> options,
+        Guid? questionId = null)
+    {
+        var questionOptions = new List<QuestionOption>();
+
+        foreach (var option in options.OrderBy(o => o.OrderIndex))
+        {
+            var questionOption = new QuestionOption
+            {
+                Text = option.Text.Trim(),
+                IsCorrect = option.IsCorrect,
+                OrderIndex = option.OrderIndex
+            };
+
+            if (questionId.HasValue)
+            {
+                questionOption.QuestionId = questionId.Value;
+            }
+
+            questionOptions.Add(questionOption);
+        }
+
+        return questionOptions;
     }
 
     private static QuizResponseDto ToQuizResponseDto(Quiz quiz) =>
