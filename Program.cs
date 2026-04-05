@@ -29,18 +29,21 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IPublicService, PublicService>();
 builder.Services.AddScoped<IQuizService, QuizService>();
 
-// CORS
+// ======================
+// CORS (FIXED)
+// ======================
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy
-            .SetIsOriginAllowed(origin =>
-                origin.StartsWith("http://localhost:", StringComparison.OrdinalIgnoreCase) ||
-                origin.StartsWith("https://localhost:", StringComparison.OrdinalIgnoreCase) ||
-                origin.Contains(".vercel.app", StringComparison.OrdinalIgnoreCase))
+        policy.WithOrigins(
+                "https://lms-three-amber.vercel.app",
+                "http://localhost:3000",
+                "https://localhost:3000"
+            )
             .AllowAnyHeader()
-            .AllowAnyMethod();
+            .AllowAnyMethod()
+            .AllowCredentials();
     });
 });
 
@@ -173,10 +176,17 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// ======================
+// MIDDLEWARE ORDER FIXED
+// ======================
 app.UseCors("AllowFrontend");
+
 app.UseAuthentication();
 app.UseAuthorization();
+
 app.MapControllers();
+
 app.Run();
 
 
