@@ -37,7 +37,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowFrontend", policy =>
     {
         policy.WithOrigins(
-                "https://lms-three-amber.vercel.app",
+                "https://lmsfrontend-umber.vercel.app",
                 "http://localhost:3000",
                 "https://localhost:3000"
             )
