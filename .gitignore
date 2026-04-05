@@ -30,6 +30,7 @@ __blobstorage__/
 __queuestorage__/
 __tablestorage__/
 azurite/
+AzuriteConfig
 
 # Environment / secrets
 .env
