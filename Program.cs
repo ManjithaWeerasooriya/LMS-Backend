@@ -78,7 +78,9 @@ builder.Services.Configure<AzureStorageOptions>(options =>
         ? AzureStorageOptions.DefaultContainerName
         : azureStorageContainerName;
 });
-builder.Services.AddSingleton(_ => new BlobServiceClient(azureStorageConnectionString));
+builder.Services.AddSingleton(_ => CreateBlobServiceClient(
+    azureStorageConnectionString,
+    builder.Environment.IsDevelopment()));
 builder.Services.AddScoped<AzureStorageService>();
 
 // Email
@@ -266,6 +268,17 @@ static async Task RunConnectionTestAsync(WebApplication app)
 static string? FirstNonEmpty(params string?[] values)
 {
     return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+}
+
+static BlobServiceClient CreateBlobServiceClient(string connectionString, bool isDevelopment)
+{
+    if (isDevelopment && connectionString.Contains("UseDevelopmentStorage=true", StringComparison.OrdinalIgnoreCase))
+    {
+        var options = new BlobClientOptions(BlobClientOptions.ServiceVersion.V2021_12_02);
+        return new BlobServiceClient(connectionString, options);
+    }
+
+    return new BlobServiceClient(connectionString);
 }
 
 static void LoadEnvFile()

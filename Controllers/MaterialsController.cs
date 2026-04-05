@@ -66,8 +66,8 @@ public class MaterialsController : ControllerBase
         if (string.IsNullOrWhiteSpace(extension) || !AllowedExtensions.Contains(extension))
             return BadRequest("Invalid file type.");
 
-        var contentType = file.ContentType?.Trim() ?? "application/octet-stream";
-        if (!AllowedContentTypes.Contains(contentType))
+        var contentType = NormalizeContentType(file.ContentType);
+        if (!IsAllowedContentType(contentType, extension))
             return BadRequest("Invalid content type.");
 
         var userId = GetCurrentUserId();
@@ -227,5 +227,31 @@ public class MaterialsController : ControllerBase
             return "assignment";
 
         return "other";
+    }
+
+    private static string NormalizeContentType(string? contentType)
+    {
+        if (string.IsNullOrWhiteSpace(contentType))
+        {
+            return "application/octet-stream";
+        }
+
+        return contentType
+            .Split(';', 2)[0]
+            .Trim()
+            .ToLowerInvariant();
+    }
+
+    private static bool IsAllowedContentType(string contentType, string extension)
+    {
+        if (AllowedContentTypes.Contains(contentType))
+        {
+            return true;
+        }
+
+        // Some clients, including Postman, frequently send generic octet-stream
+        // for file parts even when the extension is valid.
+        return string.Equals(contentType, "application/octet-stream", StringComparison.OrdinalIgnoreCase)
+            && AllowedExtensions.Contains(extension);
     }
 }

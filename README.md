@@ -86,6 +86,7 @@ The extension starts the same local emulator services, so the backend will still
 - `appsettings.Development.json` sets `AzureStorage:ConnectionString` to `UseDevelopmentStorage=true`.
 - `.env` also sets `AzureStorage__ConnectionString=UseDevelopmentStorage=true`.
 - The default blob container used by the API is `course-materials`.
+- The backend also pins an older Azure Blob service API version when running against Azurite in `Development`. This avoids failures where newer `Azure.Storage.Blobs` SDK versions send a storage API version that the installed Azurite build does not support.
 
 ### Production configuration
 - `appsettings.json` keeps the Azure storage value empty by default.
