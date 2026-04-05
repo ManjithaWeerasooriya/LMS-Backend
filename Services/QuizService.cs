@@ -543,7 +543,7 @@ public class QuizService : IQuizService
         answer.ReviewStatus = StudentAnswerReviewStatus.Reviewed;
         answer.ReviewedAt = DateTime.UtcNow;
 
-        RecalculateAttemptOutcome(attempt);
+        RecalculateAttemptOutcome(attempt, DateTime.UtcNow);
         await _context.SaveChangesAsync(cancellationToken);
 
         return ToTeacherAttemptDetailDto(attempt);
@@ -807,6 +807,7 @@ public class QuizService : IQuizService
             .Include(q => q.Questions)
             .ThenInclude(question => question.Options)
             .Include(q => q.Attempts)
+            .ThenInclude(attempt => attempt.Answers)
             .FirstOrDefaultAsync(q => q.Id == quizId, cancellationToken);
 
         if (quiz == null)
@@ -818,8 +819,18 @@ public class QuizService : IQuizService
         var nowUtc = DateTime.UtcNow;
         EnsureQuizCanBeStarted(quiz, nowUtc, studentId);
 
-        var existingInProgressAttempt = quiz.Attempts
-            .FirstOrDefault(a => a.StudentId == studentId && a.Status == QuizAttemptStatus.InProgress);
+        var studentAttempts = quiz.Attempts
+            .Where(a => string.Equals(a.StudentId, studentId, StringComparison.Ordinal))
+            .ToList();
+
+        var attemptStatesNormalized = NormalizeAttemptStatesForStart(studentAttempts, nowUtc);
+        if (attemptStatesNormalized)
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+
+        var existingInProgressAttempt = studentAttempts
+            .FirstOrDefault(a => IsActiveUnfinishedAttempt(a, nowUtc));
 
         if (existingInProgressAttempt != null)
         {
@@ -832,7 +843,7 @@ public class QuizService : IQuizService
             .DefaultIfEmpty(0)
             .Max() + 1;
 
-        if (!quiz.AllowMultipleAttempts && nextAttemptNumber > 1)
+        if (!quiz.AllowMultipleAttempts && studentAttempts.Any(IsCompletedAttempt))
         {
             throw new ConflictException("Multiple attempts are not allowed for this quiz.");
         }
@@ -889,7 +900,7 @@ public class QuizService : IQuizService
             throw new NotFoundException("Quiz attempt not found.");
         }
 
-        if (attempt.Status != QuizAttemptStatus.InProgress)
+        if (attempt.Status != QuizAttemptStatus.InProgress || attempt.SubmittedAt.HasValue)
         {
             throw new ConflictException("Only in-progress attempts can be submitted.");
         }
@@ -901,9 +912,6 @@ public class QuizService : IQuizService
             await _context.SaveChangesAsync(cancellationToken);
             throw new ConflictException("Quiz attempt has expired.");
         }
-
-        attempt.SubmittedAt = nowUtc;
-        attempt.Status = QuizAttemptStatus.Submitted;
 
         var questionMap = attempt.Quiz.Questions.ToDictionary(q => q.Id);
         var payloadMap = dto.Answers.ToDictionary(a => a.QuestionId);
@@ -932,8 +940,10 @@ public class QuizService : IQuizService
 
         _context.StudentAnswers.AddRange(generatedAnswers);
         attempt.Answers = generatedAnswers;
+        attempt.SubmittedAt = nowUtc;
+        attempt.Status = QuizAttemptStatus.Submitted;
 
-        RecalculateAttemptOutcome(attempt);
+        RecalculateAttemptOutcome(attempt, nowUtc);
         await _context.SaveChangesAsync(cancellationToken);
 
         return ToStudentAttemptDetailDto(attempt);
@@ -1261,7 +1271,55 @@ public class QuizService : IQuizService
         }
     }
 
-    private static void RecalculateAttemptOutcome(QuizAttempt attempt)
+    private static bool NormalizeAttemptStatesForStart(
+        IEnumerable<QuizAttempt> attempts,
+        DateTime nowUtc)
+    {
+        var changed = false;
+
+        foreach (var attempt in attempts)
+        {
+            if (attempt.Status == QuizAttemptStatus.InProgress && nowUtc > attempt.DeadlineUtc)
+            {
+                attempt.Status = QuizAttemptStatus.Expired;
+                attempt.ReviewedAt = null;
+                changed = true;
+                continue;
+            }
+
+            if (attempt.SubmittedAt.HasValue &&
+                (attempt.Status == QuizAttemptStatus.InProgress || attempt.Status == QuizAttemptStatus.Submitted))
+            {
+                var previousStatus = attempt.Status;
+                var previousScore = attempt.Score;
+                var previousReviewedAt = attempt.ReviewedAt;
+
+                RecalculateAttemptOutcome(attempt, attempt.SubmittedAt.Value);
+
+                if (attempt.Status != previousStatus ||
+                    attempt.Score != previousScore ||
+                    attempt.ReviewedAt != previousReviewedAt)
+                {
+                    changed = true;
+                }
+            }
+        }
+
+        return changed;
+    }
+
+    private static bool IsActiveUnfinishedAttempt(QuizAttempt attempt, DateTime nowUtc) =>
+        attempt.Status == QuizAttemptStatus.InProgress &&
+        !attempt.SubmittedAt.HasValue &&
+        attempt.DeadlineUtc >= nowUtc;
+
+    private static bool IsCompletedAttempt(QuizAttempt attempt) =>
+        attempt.Status == QuizAttemptStatus.Submitted ||
+        attempt.Status == QuizAttemptStatus.PendingReview ||
+        attempt.Status == QuizAttemptStatus.Graded ||
+        attempt.SubmittedAt.HasValue;
+
+    private static void RecalculateAttemptOutcome(QuizAttempt attempt, DateTime outcomeTimestampUtc)
     {
         attempt.Score = attempt.Answers.Sum(a => a.AwardedMarks);
 
@@ -1272,7 +1330,7 @@ public class QuizService : IQuizService
         }
 
         attempt.Status = hasPendingReview ? QuizAttemptStatus.PendingReview : QuizAttemptStatus.Graded;
-        attempt.ReviewedAt = hasPendingReview ? null : DateTime.UtcNow;
+        attempt.ReviewedAt = hasPendingReview ? null : outcomeTimestampUtc;
     }
 
     private static IReadOnlyList<QuestionOptionRequestDto> NormalizeQuestionOptions(
