@@ -11,11 +11,9 @@ using LMS_Backend.Services;
 using LMS_Backend.Services.Reporting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
-using Microsoft.AspNetCore.Http;
 
 LoadEnvFile();
 
@@ -26,40 +24,26 @@ var filteredArgs = testConnectionRequested
 
 var builder = WebApplication.CreateBuilder(filteredArgs);
 
-builder.Services.AddControllers()
-    .ConfigureApiBehaviorOptions(options =>
-    {
-        options.InvalidModelStateResponseFactory = context =>
-        {
-            var errors = context.ModelState
-                .Where(entry => entry.Value?.Errors.Count > 0)
-                .ToDictionary(
-                    entry => entry.Key,
-                    entry => entry.Value!.Errors.Select(error => error.ErrorMessage).ToArray());
-
-            return new BadRequestObjectResult(
-                LMS_Backend.Models.DTOs.Common.ApiResponse<object?>.ErrorResponse(
-                    "Validation failed.",
-                    errors));
-        };
-    });
+builder.Services.AddControllers();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IPublicService, PublicService>();
 builder.Services.AddScoped<IQuizService, QuizService>();
-builder.Services.AddScoped<AzureStorageService>();
 
-// CORS
+// ======================
+// CORS (FIXED)
+// ======================
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy
-            .SetIsOriginAllowed(origin =>
-                origin.StartsWith("http://localhost:", StringComparison.OrdinalIgnoreCase) ||
-                origin.StartsWith("https://localhost:", StringComparison.OrdinalIgnoreCase) ||
-                origin.Contains(".vercel.app", StringComparison.OrdinalIgnoreCase))
+        policy.WithOrigins(
+                "https://lms-three-amber.vercel.app",
+                "http://localhost:3000",
+                "https://localhost:3000"
+            )
             .AllowAnyHeader()
-            .AllowAnyMethod();
+            .AllowAnyMethod()
+            .AllowCredentials();
     });
 });
 
@@ -140,13 +124,6 @@ builder.Services.AddSwaggerGen(options =>
         Description = "Learning Management System backend endpoints"
     });
 
-    options.MapType<IFormFile>(() => new OpenApiSchema
-    {
-        Type = "string",
-        Format = "binary"
-    });
-    options.OperationFilter<FileUploadOperationFilter>();
-
     var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
     var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
     if (File.Exists(xmlPath))
@@ -199,10 +176,17 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// ======================
+// MIDDLEWARE ORDER FIXED
+// ======================
 app.UseCors("AllowFrontend");
+
 app.UseAuthentication();
 app.UseAuthorization();
+
 app.MapControllers();
+
 app.Run();
 
 
