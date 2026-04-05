@@ -6,8 +6,8 @@ using LMS_Backend.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Moq;
+using Microsoft.Extensions.Options;
+using Azure.Storage.Blobs;
 
 namespace LMS_Backend.Tests.Materials;
 
@@ -198,12 +198,9 @@ public class MaterialsControllerTests
 
     private static AzureStorageService CreateStorageStub()
     {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { { "AZURE_CONN", "UseDevelopmentStorage=true" } })
-            .Build();
-
-        var mock = new Mock<AzureStorageService>(configuration) { CallBase = false };
-        return mock.Object;
+        return new AzureStorageService(
+            new BlobServiceClient("UseDevelopmentStorage=true"),
+            Options.Create(new AzureStorageOptions()));
     }
 
     private static ApplicationDBContext CreateDbContext(string? dbName = null)

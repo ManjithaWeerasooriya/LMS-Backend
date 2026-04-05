@@ -24,6 +24,13 @@ logs/
 tmp/
 LMS-Backend.Tests/TestResults/
 
+# Azurite local storage artifacts
+__azurite_db_*.json
+__blobstorage__/
+__queuestorage__/
+__tablestorage__/
+azurite/
+
 # Environment / secrets
 .env
 .env.*
@@ -31,4 +38,3 @@ LMS-Backend.Tests/TestResults/
 # Postman collection
 .postman
 postman
-

@@ -6,11 +6,13 @@ Backend services for the LMS project built with ASP.NET Core and Entity Framewor
 - .NET SDK 10.0 (Preview) or newer installed and available on your `PATH`.
 - Docker Desktop (or the Docker Engine CLI) for running SQL Server locally.
 - SQL Server client tool of your choice (Azure Data Studio, sqlcmd, etc.) for manual inspection.
+- Azurite for local Azure Blob Storage emulation during Development.
 
 ## Build, Run, and Test
 - **Restore dependencies**: `dotnet restore` from the repo root the first time you clone or when packages change.
 - **Build**: `dotnet build` (adds `--configuration Release` when producing artifacts). This validates the code compiles against the configured target framework.
 - **Run the API**: `dotnet run --project LMS-Backend.csproj` (optionally add `--launch-profile "https"`). Regardless of environment, the app expects `ConnectionStrings:DefaultConnection`; provide different values per environment via `.env`, `.env.Production`, or environment variables named `ConnectionStrings__DefaultConnection`.
+- **Blob storage configuration**: in `Development`, the backend uses `AzureStorage:ConnectionString=UseDevelopmentStorage=true`, which points to Azurite. In `Production`, set `AzureStorage__ConnectionString` to the real Azure Storage account connection string.
 - **Smoke-test DB connectivity**: `dotnet run --project LMS-Backend.csproj -- --testconnection` loads the configured connection string for the current environment, attempts to connect once, then exits (non-zero exit code on failure). Use this before deployments to ensure the app can reach Azure SQL.
 - **Hot reload (optional)**: `dotnet watch --project LMS-Backend.csproj` for rapid iteration during development.
 - **Test**: `dotnet test LMS-Backend.Tests/LMS-Backend.Tests.csproj` runs all xUnit suites. From the repository root you can also run `dotnet test` to execute every test project in the solution. To target a single test or namespace, append `--filter "<expression>"` (e.g., `--filter "FullyQualifiedName~Users"`). For coverage reports, use `dotnet test LMS-Backend.Tests/LMS-Backend.Tests.csproj --collect:"XPlat Code Coverage"` and inspect the `TestResults/<timestamp>/coverage.cobertura.xml` file.
@@ -33,7 +35,62 @@ Backend services for the LMS project built with ASP.NET Core and Entity Framewor
 - `dotnet run` without flags loads the profile named `http` from `Properties/launchSettings.json`, which sets `ASPNETCORE_ENVIRONMENT=Development`. Use this for local Docker + dev DB testing.
 - To run against another environment temporarily, export both `DOTNET_ENVIRONMENT` and `ASPNETCORE_ENVIRONMENT` before launching and bypass launch settings so their values win, e.g. `DOTNET_ENVIRONMENT=Production ASPNETCORE_ENVIRONMENT=Production dotnet run --no-launch-profile --urls http://localhost:5251`.
 - To keep using launch profiles, duplicate one of the existing entries in `Properties/launchSettings.json`, rename it (for example `Production`), set `ASPNETCORE_ENVIRONMENT` accordingly, and then run `dotnet run --launch-profile Production` (or choose it via Visual Studio/Rider UI). Any profile-specific URLs you configure there will be honored.
-- Remember that whichever profile/environment you pick must still provide `ConnectionStrings__DefaultConnection` (through `.env`, secrets manager, or platform settings) so the app can reach the correct database.
+- Remember that whichever profile/environment you pick must still provide `ConnectionStrings__DefaultConnection` so the app can reach the correct database, plus the matching blob setting:
+  `AzureStorage__ConnectionString=UseDevelopmentStorage=true` for local Development or a real Azure Storage connection string for Production.
+
+## Azurite for Local Blob Storage
+The backend is configured to use Azurite automatically in the `Development` environment through `appsettings.Development.json` and `.env`.
+
+### Install Azurite on your machine
+You can install Azurite in either of these common ways:
+
+- With Node.js and npm installed:
+  ```bash
+  npm install -g azurite
+  ```
+- With Visual Studio Code:
+  install the `Azurite` extension from the VS Code Extensions marketplace.
+
+After installation, verify the CLI is available:
+
+```bash
+azurite --version
+```
+
+### Run Azurite locally
+Start Azurite before running the API in `Development`:
+
+```bash
+azurite --silent --location ./azurite --debug ./azurite/debug.log
+```
+
+This starts the local Blob service using the default development endpoints expected by `UseDevelopmentStorage=true`.
+
+The backend will then connect through:
+
+- Blob endpoint: `http://127.0.0.1:10000/devstoreaccount1`
+- Queue endpoint: `http://127.0.0.1:10001/devstoreaccount1`
+- Table endpoint: `http://127.0.0.1:10002/devstoreaccount1`
+
+### Use the Azurite VS Code extension
+If you prefer working from VS Code instead of the CLI:
+
+1. Install the `Azurite` extension.
+2. Open the command palette.
+3. Run `Azurite: Start`.
+4. Keep Azurite running while the backend is running in `Development`.
+
+The extension starts the same local emulator services, so the backend will still work with `AzureStorage__ConnectionString=UseDevelopmentStorage=true`.
+
+### Development configuration used by this project
+- `appsettings.Development.json` sets `AzureStorage:ConnectionString` to `UseDevelopmentStorage=true`.
+- `.env` also sets `AzureStorage__ConnectionString=UseDevelopmentStorage=true`.
+- The default blob container used by the API is `course-materials`.
+
+### Production configuration
+- `appsettings.json` keeps the Azure storage value empty by default.
+- `.env.Production` contains `AzureStorage__ConnectionString`, which must be set to your real Azure Storage account connection string before deployment.
+- Production does not use Azurite.
 
 ### Password Reset Flow
 - `POST /api/v1/auth/forgot-password` accepts `{ "email": "user@example.com" }` and always returns `{ "message": "If an account with this email exists, a password reset link has been sent." }`. Behind the scenes, the API only generates a token and sends email when the address exists and is confirmed, but the consistent response prevents account enumeration.

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using Azure.Storage.Blobs;
 using LMS_Backend.Data;
 using LMS_Backend.Infrastructure.Auth;
 using LMS_Backend.Infrastructure.Seed;
@@ -56,6 +57,29 @@ if (string.IsNullOrWhiteSpace(connectionString))
 
 builder.Services.AddDbContext<ApplicationDBContext>(options =>
     options.UseSqlServer(connectionString));
+
+var azureStorageConnectionString = FirstNonEmpty(
+    builder.Configuration[$"{AzureStorageOptions.SectionName}:ConnectionString"],
+    builder.Configuration["AZURE_CONN"]);
+var azureStorageContainerName = FirstNonEmpty(
+    builder.Configuration[$"{AzureStorageOptions.SectionName}:ContainerName"],
+    AzureStorageOptions.DefaultContainerName);
+
+if (string.IsNullOrWhiteSpace(azureStorageConnectionString))
+{
+    throw new InvalidOperationException(
+        $"Azure Blob Storage connection string is not configured. Set '{AzureStorageOptions.SectionName}:ConnectionString'.");
+}
+
+builder.Services.Configure<AzureStorageOptions>(options =>
+{
+    options.ConnectionString = azureStorageConnectionString;
+    options.ContainerName = string.IsNullOrWhiteSpace(azureStorageContainerName)
+        ? AzureStorageOptions.DefaultContainerName
+        : azureStorageContainerName;
+});
+builder.Services.AddSingleton(_ => new BlobServiceClient(azureStorageConnectionString));
+builder.Services.AddScoped<AzureStorageService>();
 
 // Email
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
@@ -237,6 +261,11 @@ static async Task RunConnectionTestAsync(WebApplication app)
         Console.Error.WriteLine($"Database connection failed: {ex.Message}");
         Environment.ExitCode = 1;
     }
+}
+
+static string? FirstNonEmpty(params string?[] values)
+{
+    return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 }
 
 static void LoadEnvFile()
