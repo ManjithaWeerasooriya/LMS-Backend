@@ -55,7 +55,13 @@ if (string.IsNullOrWhiteSpace(connectionString))
 }
 
 builder.Services.AddDbContext<ApplicationDBContext>(options =>
-    options.UseSqlServer(connectionString));
+    options.UseSqlServer(connectionString, sql =>
+    {
+        sql.EnableRetryOnFailure(
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(10),
+            errorNumbersToAdd: null);
+    }));
 
 // Email
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
@@ -165,9 +171,16 @@ if (testConnectionRequested)
     return;
 }
 
-// Apply migrations + seed
-await ApplyPendingMigrationsAsync(app);
-await SeedIdentityAsync(app);
+// Apply migrations + seed (TEMP DISABLED TO PREVENT STARTUP CRASH)
+try
+{
+    // await ApplyPendingMigrationsAsync(app);
+    // await SeedIdentityAsync(app);
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"Startup DB error: {ex}");
+}
 
 if (app.Environment.IsDevelopment())
 {
