@@ -913,8 +913,11 @@ public class QuizService : IQuizService
             throw new ConflictException("Quiz attempt has expired.");
         }
 
+        ValidateSubmitAttemptRequest(dto);
+
         var questionMap = attempt.Quiz.Questions.ToDictionary(q => q.Id);
-        var payloadMap = dto.Answers.ToDictionary(a => a.QuestionId);
+        var submittedAnswers = dto.Answers ?? [];
+        var payloadMap = submittedAnswers.ToDictionary(a => a.QuestionId);
 
         foreach (var submittedQuestionId in payloadMap.Keys)
         {
@@ -1170,11 +1173,8 @@ public class QuizService : IQuizService
 
         if (QuestionValidation.IsObjective(question.Type))
         {
-            ValidateObjectiveSubmission(question, submittedAnswer);
-
-            var selectedOptionIds = (submittedAnswer?.SelectedOptionIds ?? new List<Guid>())
-                .Distinct()
-                .ToList();
+            var selectedOptionIds = NormalizeSelectedOptionIds(submittedAnswer?.SelectedOptionIds);
+            ValidateObjectiveSubmission(question, submittedAnswer, selectedOptionIds);
 
             answer.SelectedOptions = question.Options
                 .Where(o => selectedOptionIds.Contains(o.Id))
@@ -1219,20 +1219,19 @@ public class QuizService : IQuizService
         return answer;
     }
 
-    private static void ValidateObjectiveSubmission(Question question, SubmitStudentAnswerDto? submittedAnswer)
+    private static void ValidateObjectiveSubmission(
+        Question question,
+        SubmitStudentAnswerDto? submittedAnswer,
+        IReadOnlyCollection<Guid> selectedOptionIds)
     {
         if (!string.IsNullOrWhiteSpace(submittedAnswer?.AnswerText) || !string.IsNullOrWhiteSpace(submittedAnswer?.FileReference))
         {
             throw new InvalidOperationException("Objective questions can only be answered by selecting options.");
         }
 
-        var selectedOptionIds = (submittedAnswer?.SelectedOptionIds ?? new List<Guid>())
-            .Distinct()
-            .ToList();
-
         if (selectedOptionIds.Count == 0)
         {
-            return;
+            throw new InvalidOperationException(GetObjectiveSelectionRequiredMessage(question.Type));
         }
 
         var validOptionIds = question.Options.Select(o => o.Id).ToHashSet();
@@ -1242,15 +1241,15 @@ public class QuizService : IQuizService
         }
 
         if ((question.Type == QuestionType.SingleMcq || question.Type == QuestionType.TrueFalse) &&
-            selectedOptionIds.Distinct().Count() > 1)
+            selectedOptionIds.Count != 1)
         {
-            throw new InvalidOperationException("This question accepts only one option.");
+            throw new InvalidOperationException(GetSingleSelectionMessage(question.Type));
         }
     }
 
     private static void ValidateSubjectiveSubmission(Question question, SubmitStudentAnswerDto? submittedAnswer)
     {
-        var hasSelectedOptions = submittedAnswer?.SelectedOptionIds.Count > 0;
+        var hasSelectedOptions = NormalizeSelectedOptionIds(submittedAnswer?.SelectedOptionIds).Count > 0;
         if (hasSelectedOptions)
         {
             throw new InvalidOperationException("Subjective questions cannot be answered using options.");
@@ -1263,11 +1262,23 @@ public class QuizService : IQuizService
             throw new InvalidOperationException("File upload questions only accept a file reference.");
         }
 
+        if (question.Type == QuestionType.FileUpload &&
+            string.IsNullOrWhiteSpace(submittedAnswer?.FileReference))
+        {
+            throw new InvalidOperationException("File upload questions require a file reference.");
+        }
+
         if ((question.Type == QuestionType.ShortAnswer || question.Type == QuestionType.Essay) &&
             submittedAnswer != null &&
             !string.IsNullOrWhiteSpace(submittedAnswer.FileReference))
         {
             throw new InvalidOperationException("Text-based questions do not accept a file reference.");
+        }
+
+        if ((question.Type == QuestionType.ShortAnswer || question.Type == QuestionType.Essay) &&
+            string.IsNullOrWhiteSpace(submittedAnswer?.AnswerText))
+        {
+            throw new InvalidOperationException(GetTextAnswerRequiredMessage(question.Type));
         }
     }
 
@@ -1332,6 +1343,61 @@ public class QuizService : IQuizService
         attempt.Status = hasPendingReview ? QuizAttemptStatus.PendingReview : QuizAttemptStatus.Graded;
         attempt.ReviewedAt = hasPendingReview ? null : outcomeTimestampUtc;
     }
+
+    private static void ValidateSubmitAttemptRequest(SubmitQuizAttemptDto dto)
+    {
+        var validationResults = new List<ValidationResult>();
+        ValidateObject(dto, validationResults);
+
+        foreach (var answer in dto.Answers ?? [])
+        {
+            ValidateObject(answer, validationResults);
+        }
+
+        if (validationResults.Count == 0)
+        {
+            return;
+        }
+
+        var message = string.Join(
+            " ",
+            validationResults
+                .Select(result => result.ErrorMessage)
+                .Where(message => !string.IsNullOrWhiteSpace(message))
+                .Distinct(StringComparer.Ordinal));
+
+        throw new ArgumentException(
+            string.IsNullOrWhiteSpace(message)
+                ? "Quiz submission request is invalid."
+                : message);
+    }
+
+    private static List<Guid> NormalizeSelectedOptionIds(List<Guid>? selectedOptionIds) =>
+        (selectedOptionIds ?? []).Distinct().ToList();
+
+    private static string GetObjectiveSelectionRequiredMessage(QuestionType type) =>
+        type switch
+        {
+            QuestionType.SingleMcq => "Single choice questions require exactly one selected option.",
+            QuestionType.MultipleMcq => "Multiple choice questions require at least one selected option.",
+            QuestionType.TrueFalse => "True/false questions require exactly one selected option.",
+            _ => "Objective questions require selected options."
+        };
+
+    private static string GetSingleSelectionMessage(QuestionType type) =>
+        type switch
+        {
+            QuestionType.TrueFalse => "True/false questions require exactly one selected option.",
+            _ => "Single choice questions require exactly one selected option."
+        };
+
+    private static string GetTextAnswerRequiredMessage(QuestionType type) =>
+        type switch
+        {
+            QuestionType.ShortAnswer => "Short answer questions require answerText.",
+            QuestionType.Essay => "Essay questions require answerText.",
+            _ => "This question requires answerText."
+        };
 
     private static IReadOnlyList<QuestionOptionRequestDto> NormalizeQuestionOptions(
         List<QuestionOptionRequestDto>? options) =>
