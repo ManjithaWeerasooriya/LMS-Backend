@@ -348,7 +348,7 @@ public class QuizSubmissionTests
             Title = "Timer Quiz",
             DurationMinutes = 5,
             StartTimeUtc = DateTime.UtcNow.AddMinutes(-10),
-            EndTimeUtc = DateTime.UtcNow.AddMinutes(-2),
+            EndTimeUtc = DateTime.UtcNow.AddMinutes(10),
             TotalMarks = 5,
             RandomizeQuestions = false,
             AllowMultipleAttempts = false,
