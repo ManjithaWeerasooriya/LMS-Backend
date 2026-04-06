@@ -156,6 +156,72 @@ public class StudentQuizResultServiceTests
     }
 
     [Fact]
+    public async Task GetStudentQuizResultAsync_WhenNewerAttemptIsInProgress_ReturnsLatestSubmittedAttempt()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+
+        await using var setupContext = CreateDbContext(databaseName);
+        await SeedUsersAsync(setupContext, "student-1");
+        var course = CreateCourse("teacher-1");
+        course.Enrollments.Add(new CourseEnrollment { CourseId = course.Id, StudentId = "student-1" });
+        setupContext.Courses.Add(course);
+        await setupContext.SaveChangesAsync();
+
+        var setupService = new QuizService(setupContext);
+        var quiz = await setupService.CreateQuizAsync("teacher-1", new CreateQuizDto
+        {
+            CourseId = course.Id,
+            Title = "Multiple Attempt Quiz",
+            DurationMinutes = 20,
+            StartTimeUtc = DateTime.UtcNow.AddMinutes(-10),
+            EndTimeUtc = DateTime.UtcNow.AddHours(1),
+            TotalMarks = 5,
+            RandomizeQuestions = false,
+            AllowMultipleAttempts = true,
+            IsPublished = true,
+            AreResultsPublished = true
+        }, CancellationToken.None);
+
+        var question = await setupService.CreateQuestionAsync("teacher-1", quiz.Id, new CreateQuestionDto
+        {
+            Text = "1 + 1 = ?",
+            Type = QuestionType.SingleMcq,
+            Marks = 5,
+            OrderIndex = 1,
+            Options = new List<QuestionOptionRequestDto>
+            {
+                new() { Text = "2", IsCorrect = true, OrderIndex = 1 },
+                new() { Text = "3", IsCorrect = false, OrderIndex = 2 }
+            }
+        }, CancellationToken.None);
+
+        var submittedAttempt = await setupService.StartQuizAttemptAsync("student-1", quiz.Id, CancellationToken.None);
+        await setupService.SubmitQuizAttemptAsync("student-1", submittedAttempt.AttemptId, new SubmitQuizAttemptDto
+        {
+            Answers = new List<SubmitStudentAnswerDto>
+            {
+                new()
+                {
+                    QuestionId = question.Id,
+                    SelectedOptionIds = new List<Guid> { question.Options.Single(o => o.IsCorrect).Id }
+                }
+            }
+        }, CancellationToken.None);
+
+        var inProgressAttempt = await setupService.StartQuizAttemptAsync("student-1", quiz.Id, CancellationToken.None);
+
+        await using var verificationContext = CreateDbContext(databaseName);
+        var verificationService = new QuizService(verificationContext);
+
+        var result = await verificationService.GetStudentQuizResultAsync("student-1", quiz.Id, CancellationToken.None);
+
+        Assert.Equal(submittedAttempt.AttemptId, result.AttemptId);
+        Assert.NotEqual(inProgressAttempt.AttemptId, result.AttemptId);
+        Assert.Equal(QuizAttemptStatus.Graded, result.Status);
+        Assert.Equal(5m, result.AwardedMarks);
+    }
+
+    [Fact]
     public async Task GetStudentQuizResultAsync_WhenStudentRequestsAnotherStudentsResult_ReturnsNotFound()
     {
         var databaseName = Guid.NewGuid().ToString();

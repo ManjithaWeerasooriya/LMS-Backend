@@ -881,16 +881,7 @@ public class QuizService : IQuizService
     {
         await EnsureStudentEnrolledForQuizResultAsync(studentId, quizId, cancellationToken);
 
-        var latestAttemptId = await _context.QuizAttempts
-            .AsNoTracking()
-            .Where(a =>
-                a.QuizId == quizId &&
-                a.StudentId == studentId &&
-                a.SubmittedAt.HasValue)
-            .OrderByDescending(a => a.SubmittedAt)
-            .ThenByDescending(a => a.AttemptNumber)
-            .Select(a => a.Id)
-            .FirstOrDefaultAsync(cancellationToken);
+        var latestAttemptId = await GetLatestSubmittedAttemptIdAsync(studentId, quizId, cancellationToken);
 
         if (latestAttemptId == Guid.Empty)
         {
@@ -1116,6 +1107,27 @@ public class QuizService : IQuizService
         {
             throw new ForbiddenException("You must be enrolled in the course to access this quiz result.");
         }
+    }
+
+    private async Task<Guid> GetLatestSubmittedAttemptIdAsync(
+        string studentId,
+        Guid quizId,
+        CancellationToken cancellationToken)
+    {
+        return await _context.QuizAttempts
+            .AsNoTracking()
+            .Where(a =>
+                a.QuizId == quizId &&
+                a.StudentId == studentId &&
+                a.SubmittedAt.HasValue &&
+                (a.Status == QuizAttemptStatus.Submitted ||
+                 a.Status == QuizAttemptStatus.PendingReview ||
+                 a.Status == QuizAttemptStatus.Graded))
+            .OrderByDescending(a => a.SubmittedAt)
+            .ThenByDescending(a => a.AttemptNumber)
+            .ThenByDescending(a => a.Id)
+            .Select(a => a.Id)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     private static void EnsureQuizCanBeStarted(Quiz quiz, DateTime nowUtc, string studentId)
