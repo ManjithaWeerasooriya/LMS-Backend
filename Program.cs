@@ -38,7 +38,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowFrontend", policy =>
     {
         policy.WithOrigins(
-                "https://lms-three-amber.vercel.app",
+                "https://lmsfrontend-umber.vercel.app",
                 "http://localhost:3000",
                 "https://localhost:3000"
             )
@@ -56,7 +56,13 @@ if (string.IsNullOrWhiteSpace(connectionString))
 }
 
 builder.Services.AddDbContext<ApplicationDBContext>(options =>
-    options.UseSqlServer(connectionString));
+    options.UseSqlServer(connectionString, sql =>
+    {
+        sql.EnableRetryOnFailure(
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(10),
+            errorNumbersToAdd: null);
+    }));
 
 var azureStorageConnectionString = FirstNonEmpty(
     builder.Configuration[$"{AzureStorageOptions.SectionName}:ConnectionString"],
@@ -191,9 +197,16 @@ if (testConnectionRequested)
     return;
 }
 
-// Apply migrations + seed
-await ApplyPendingMigrationsAsync(app);
-await SeedIdentityAsync(app);
+// Apply migrations + seed (TEMP DISABLED TO PREVENT STARTUP CRASH)
+try
+{
+    // await ApplyPendingMigrationsAsync(app);
+    // await SeedIdentityAsync(app);
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"Startup DB error: {ex}");
+}
 
 if (app.Environment.IsDevelopment())
 {
@@ -206,6 +219,8 @@ app.UseHttpsRedirection();
 // ======================
 // MIDDLEWARE ORDER FIXED
 // ======================
+app.UseRouting();
+
 app.UseCors("AllowFrontend");
 
 app.UseAuthentication();

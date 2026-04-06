@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 namespace LMS_Backend.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/v1/teacher/materials")]
 public class MaterialsController : ControllerBase
 {
     private readonly AzureStorageService _azureStorageService;
