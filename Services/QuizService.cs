@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using LMS_Backend.Data;
 using LMS_Backend.Models.DTOs.Quiz;
 using LMS_Backend.Models.DTOs.Student;
@@ -342,6 +343,8 @@ public class QuizService : IQuizService
         }
 
         EnsureQuizStructureCanChange(quiz);
+        var normalizedOptions = NormalizeQuestionOptions(dto.Options);
+        ValidateQuestionRequest(dto, normalizedOptions);
         EnsureQuestionOrderIsUnique(quiz.Questions, dto.OrderIndex, null);
         EnsureMarksBudget(quiz.TotalMarks, quiz.Questions.Sum(q => q.Marks) + dto.Marks);
 
@@ -353,15 +356,7 @@ public class QuizService : IQuizService
             Marks = dto.Marks,
             OrderIndex = dto.OrderIndex,
             CreatedAt = DateTime.UtcNow,
-            Options = dto.Options
-                .OrderBy(o => o.OrderIndex)
-                .Select(o => new QuestionOption
-                {
-                    Text = o.Text.Trim(),
-                    IsCorrect = o.IsCorrect,
-                    OrderIndex = o.OrderIndex
-                })
-                .ToList()
+            Options = BuildQuestionOptions(normalizedOptions)
         };
 
         _context.Questions.Add(question);
@@ -397,6 +392,8 @@ public class QuizService : IQuizService
             throw new NotFoundException("Question not found.");
         }
 
+        var normalizedOptions = NormalizeQuestionOptions(dto.Options);
+        ValidateQuestionRequest(dto, normalizedOptions);
         EnsureQuestionOrderIsUnique(quiz.Questions, dto.OrderIndex, questionId);
 
         var remainingMarks = quiz.Questions
@@ -417,16 +414,7 @@ public class QuizService : IQuizService
             option.DeletedAt = DateTime.UtcNow;
         }
 
-        question.Options = dto.Options
-            .OrderBy(o => o.OrderIndex)
-            .Select(o => new QuestionOption
-            {
-                QuestionId = question.Id,
-                Text = o.Text.Trim(),
-                IsCorrect = o.IsCorrect,
-                OrderIndex = o.OrderIndex
-            })
-            .ToList();
+        question.Options = BuildQuestionOptions(normalizedOptions, question.Id);
 
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -555,7 +543,7 @@ public class QuizService : IQuizService
         answer.ReviewStatus = StudentAnswerReviewStatus.Reviewed;
         answer.ReviewedAt = DateTime.UtcNow;
 
-        RecalculateAttemptOutcome(attempt);
+        RecalculateAttemptOutcome(attempt, DateTime.UtcNow);
         await _context.SaveChangesAsync(cancellationToken);
 
         return ToTeacherAttemptDetailDto(attempt);
@@ -819,6 +807,7 @@ public class QuizService : IQuizService
             .Include(q => q.Questions)
             .ThenInclude(question => question.Options)
             .Include(q => q.Attempts)
+            .ThenInclude(attempt => attempt.Answers)
             .FirstOrDefaultAsync(q => q.Id == quizId, cancellationToken);
 
         if (quiz == null)
@@ -830,8 +819,18 @@ public class QuizService : IQuizService
         var nowUtc = DateTime.UtcNow;
         EnsureQuizCanBeStarted(quiz, nowUtc, studentId);
 
-        var existingInProgressAttempt = quiz.Attempts
-            .FirstOrDefault(a => a.StudentId == studentId && a.Status == QuizAttemptStatus.InProgress);
+        var studentAttempts = quiz.Attempts
+            .Where(a => string.Equals(a.StudentId, studentId, StringComparison.Ordinal))
+            .ToList();
+
+        var attemptStatesNormalized = NormalizeAttemptStatesForStart(studentAttempts, nowUtc);
+        if (attemptStatesNormalized)
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+
+        var existingInProgressAttempt = studentAttempts
+            .FirstOrDefault(a => IsActiveUnfinishedAttempt(a, nowUtc));
 
         if (existingInProgressAttempt != null)
         {
@@ -844,7 +843,7 @@ public class QuizService : IQuizService
             .DefaultIfEmpty(0)
             .Max() + 1;
 
-        if (!quiz.AllowMultipleAttempts && nextAttemptNumber > 1)
+        if (!quiz.AllowMultipleAttempts && studentAttempts.Any(IsCompletedAttempt))
         {
             throw new ConflictException("Multiple attempts are not allowed for this quiz.");
         }
@@ -875,6 +874,29 @@ public class QuizService : IQuizService
         };
     }
 
+    public async Task<StudentQuizResultDto> GetStudentQuizResultAsync(
+        string studentId,
+        Guid quizId,
+        CancellationToken cancellationToken)
+    {
+        await EnsureStudentEnrolledForQuizResultAsync(studentId, quizId, cancellationToken);
+
+        var latestAttemptId = await GetLatestSubmittedAttemptIdAsync(studentId, quizId, cancellationToken);
+
+        if (latestAttemptId == Guid.Empty)
+        {
+            throw new NotFoundException("No submitted attempt found for this quiz.");
+        }
+
+        var attempt = await LoadAttemptAsync(latestAttemptId, cancellationToken);
+        if (attempt == null)
+        {
+            throw new NotFoundException("No submitted attempt found for this quiz.");
+        }
+
+        return ToStudentQuizResultDto(attempt);
+    }
+
     public async Task<QuizAttemptDetailDto> GetStudentAttemptByIdAsync(
         string studentId,
         Guid attemptId,
@@ -901,7 +923,7 @@ public class QuizService : IQuizService
             throw new NotFoundException("Quiz attempt not found.");
         }
 
-        if (attempt.Status != QuizAttemptStatus.InProgress)
+        if (attempt.Status != QuizAttemptStatus.InProgress || attempt.SubmittedAt.HasValue)
         {
             throw new ConflictException("Only in-progress attempts can be submitted.");
         }
@@ -914,11 +936,11 @@ public class QuizService : IQuizService
             throw new ConflictException("Quiz attempt has expired.");
         }
 
-        attempt.SubmittedAt = nowUtc;
-        attempt.Status = QuizAttemptStatus.Submitted;
+        ValidateSubmitAttemptRequest(dto);
 
         var questionMap = attempt.Quiz.Questions.ToDictionary(q => q.Id);
-        var payloadMap = dto.Answers.ToDictionary(a => a.QuestionId);
+        var submittedAnswers = dto.Answers ?? [];
+        var payloadMap = submittedAnswers.ToDictionary(a => a.QuestionId);
 
         foreach (var submittedQuestionId in payloadMap.Keys)
         {
@@ -944,8 +966,10 @@ public class QuizService : IQuizService
 
         _context.StudentAnswers.AddRange(generatedAnswers);
         attempt.Answers = generatedAnswers;
+        attempt.SubmittedAt = nowUtc;
+        attempt.Status = QuizAttemptStatus.Submitted;
 
-        RecalculateAttemptOutcome(attempt);
+        RecalculateAttemptOutcome(attempt, nowUtc);
         await _context.SaveChangesAsync(cancellationToken);
 
         return ToStudentAttemptDetailDto(attempt);
@@ -1057,6 +1081,55 @@ public class QuizService : IQuizService
         throw new ForbiddenException("This quiz is not available to you.");
     }
 
+    private async Task EnsureStudentEnrolledForQuizResultAsync(
+        string studentId,
+        Guid quizId,
+        CancellationToken cancellationToken)
+    {
+        var access = await _context.Quizzes
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .Where(q => q.Id == quizId)
+            .Select(q => new
+            {
+                q.Id,
+                q.IsDeleted,
+                IsEnrolled = q.Course.Enrollments.Any(e => e.StudentId == studentId)
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (access == null || access.IsDeleted)
+        {
+            throw new NotFoundException("Quiz not found.");
+        }
+
+        if (!access.IsEnrolled)
+        {
+            throw new ForbiddenException("You must be enrolled in the course to access this quiz result.");
+        }
+    }
+
+    private async Task<Guid> GetLatestSubmittedAttemptIdAsync(
+        string studentId,
+        Guid quizId,
+        CancellationToken cancellationToken)
+    {
+        return await _context.QuizAttempts
+            .AsNoTracking()
+            .Where(a =>
+                a.QuizId == quizId &&
+                a.StudentId == studentId &&
+                a.SubmittedAt.HasValue &&
+                (a.Status == QuizAttemptStatus.Submitted ||
+                 a.Status == QuizAttemptStatus.PendingReview ||
+                 a.Status == QuizAttemptStatus.Graded))
+            .OrderByDescending(a => a.SubmittedAt)
+            .ThenByDescending(a => a.AttemptNumber)
+            .ThenByDescending(a => a.Id)
+            .Select(a => a.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     private static void EnsureQuizCanBeStarted(Quiz quiz, DateTime nowUtc, string studentId)
     {
         if (!quiz.Course.Enrollments.Any(e => e.StudentId == studentId))
@@ -1141,6 +1214,10 @@ public class QuizService : IQuizService
             .LoadAsync(cancellationToken);
 
         await _context.Entry(attempt.Quiz)
+            .Reference(q => q.Course)
+            .LoadAsync(cancellationToken);
+
+        await _context.Entry(attempt.Quiz)
             .Collection(q => q.Questions)
             .Query()
             .Include(question => question.Options)
@@ -1172,11 +1249,8 @@ public class QuizService : IQuizService
 
         if (QuestionValidation.IsObjective(question.Type))
         {
-            ValidateObjectiveSubmission(question, submittedAnswer);
-
-            var selectedOptionIds = (submittedAnswer?.SelectedOptionIds ?? new List<Guid>())
-                .Distinct()
-                .ToList();
+            var selectedOptionIds = NormalizeSelectedOptionIds(submittedAnswer?.SelectedOptionIds);
+            ValidateObjectiveSubmission(question, submittedAnswer, selectedOptionIds);
 
             answer.SelectedOptions = question.Options
                 .Where(o => selectedOptionIds.Contains(o.Id))
@@ -1221,20 +1295,19 @@ public class QuizService : IQuizService
         return answer;
     }
 
-    private static void ValidateObjectiveSubmission(Question question, SubmitStudentAnswerDto? submittedAnswer)
+    private static void ValidateObjectiveSubmission(
+        Question question,
+        SubmitStudentAnswerDto? submittedAnswer,
+        IReadOnlyCollection<Guid> selectedOptionIds)
     {
         if (!string.IsNullOrWhiteSpace(submittedAnswer?.AnswerText) || !string.IsNullOrWhiteSpace(submittedAnswer?.FileReference))
         {
             throw new InvalidOperationException("Objective questions can only be answered by selecting options.");
         }
 
-        var selectedOptionIds = (submittedAnswer?.SelectedOptionIds ?? new List<Guid>())
-            .Distinct()
-            .ToList();
-
         if (selectedOptionIds.Count == 0)
         {
-            return;
+            throw new InvalidOperationException(GetObjectiveSelectionRequiredMessage(question.Type));
         }
 
         var validOptionIds = question.Options.Select(o => o.Id).ToHashSet();
@@ -1244,15 +1317,15 @@ public class QuizService : IQuizService
         }
 
         if ((question.Type == QuestionType.SingleMcq || question.Type == QuestionType.TrueFalse) &&
-            selectedOptionIds.Distinct().Count() > 1)
+            selectedOptionIds.Count != 1)
         {
-            throw new InvalidOperationException("This question accepts only one option.");
+            throw new InvalidOperationException(GetSingleSelectionMessage(question.Type));
         }
     }
 
     private static void ValidateSubjectiveSubmission(Question question, SubmitStudentAnswerDto? submittedAnswer)
     {
-        var hasSelectedOptions = submittedAnswer?.SelectedOptionIds.Count > 0;
+        var hasSelectedOptions = NormalizeSelectedOptionIds(submittedAnswer?.SelectedOptionIds).Count > 0;
         if (hasSelectedOptions)
         {
             throw new InvalidOperationException("Subjective questions cannot be answered using options.");
@@ -1265,15 +1338,75 @@ public class QuizService : IQuizService
             throw new InvalidOperationException("File upload questions only accept a file reference.");
         }
 
+        if (question.Type == QuestionType.FileUpload &&
+            string.IsNullOrWhiteSpace(submittedAnswer?.FileReference))
+        {
+            throw new InvalidOperationException("File upload questions require a file reference.");
+        }
+
         if ((question.Type == QuestionType.ShortAnswer || question.Type == QuestionType.Essay) &&
             submittedAnswer != null &&
             !string.IsNullOrWhiteSpace(submittedAnswer.FileReference))
         {
             throw new InvalidOperationException("Text-based questions do not accept a file reference.");
         }
+
+        if ((question.Type == QuestionType.ShortAnswer || question.Type == QuestionType.Essay) &&
+            string.IsNullOrWhiteSpace(submittedAnswer?.AnswerText))
+        {
+            throw new InvalidOperationException(GetTextAnswerRequiredMessage(question.Type));
+        }
     }
 
-    private static void RecalculateAttemptOutcome(QuizAttempt attempt)
+    private static bool NormalizeAttemptStatesForStart(
+        IEnumerable<QuizAttempt> attempts,
+        DateTime nowUtc)
+    {
+        var changed = false;
+
+        foreach (var attempt in attempts)
+        {
+            if (attempt.Status == QuizAttemptStatus.InProgress && nowUtc > attempt.DeadlineUtc)
+            {
+                attempt.Status = QuizAttemptStatus.Expired;
+                attempt.ReviewedAt = null;
+                changed = true;
+                continue;
+            }
+
+            if (attempt.SubmittedAt.HasValue &&
+                (attempt.Status == QuizAttemptStatus.InProgress || attempt.Status == QuizAttemptStatus.Submitted))
+            {
+                var previousStatus = attempt.Status;
+                var previousScore = attempt.Score;
+                var previousReviewedAt = attempt.ReviewedAt;
+
+                RecalculateAttemptOutcome(attempt, attempt.SubmittedAt.Value);
+
+                if (attempt.Status != previousStatus ||
+                    attempt.Score != previousScore ||
+                    attempt.ReviewedAt != previousReviewedAt)
+                {
+                    changed = true;
+                }
+            }
+        }
+
+        return changed;
+    }
+
+    private static bool IsActiveUnfinishedAttempt(QuizAttempt attempt, DateTime nowUtc) =>
+        attempt.Status == QuizAttemptStatus.InProgress &&
+        !attempt.SubmittedAt.HasValue &&
+        attempt.DeadlineUtc >= nowUtc;
+
+    private static bool IsCompletedAttempt(QuizAttempt attempt) =>
+        attempt.Status == QuizAttemptStatus.Submitted ||
+        attempt.Status == QuizAttemptStatus.PendingReview ||
+        attempt.Status == QuizAttemptStatus.Graded ||
+        attempt.SubmittedAt.HasValue;
+
+    private static void RecalculateAttemptOutcome(QuizAttempt attempt, DateTime outcomeTimestampUtc)
     {
         attempt.Score = attempt.Answers.Sum(a => a.AwardedMarks);
 
@@ -1284,7 +1417,131 @@ public class QuizService : IQuizService
         }
 
         attempt.Status = hasPendingReview ? QuizAttemptStatus.PendingReview : QuizAttemptStatus.Graded;
-        attempt.ReviewedAt = hasPendingReview ? null : DateTime.UtcNow;
+        attempt.ReviewedAt = hasPendingReview ? null : outcomeTimestampUtc;
+    }
+
+    private static void ValidateSubmitAttemptRequest(SubmitQuizAttemptDto dto)
+    {
+        var validationResults = new List<ValidationResult>();
+        ValidateObject(dto, validationResults);
+
+        foreach (var answer in dto.Answers ?? [])
+        {
+            ValidateObject(answer, validationResults);
+        }
+
+        if (validationResults.Count == 0)
+        {
+            return;
+        }
+
+        var message = string.Join(
+            " ",
+            validationResults
+                .Select(result => result.ErrorMessage)
+                .Where(message => !string.IsNullOrWhiteSpace(message))
+                .Distinct(StringComparer.Ordinal));
+
+        throw new ArgumentException(
+            string.IsNullOrWhiteSpace(message)
+                ? "Quiz submission request is invalid."
+                : message);
+    }
+
+    private static List<Guid> NormalizeSelectedOptionIds(List<Guid>? selectedOptionIds) =>
+        (selectedOptionIds ?? []).Distinct().ToList();
+
+    private static string GetObjectiveSelectionRequiredMessage(QuestionType type) =>
+        type switch
+        {
+            QuestionType.SingleMcq => "Single choice questions require exactly one selected option.",
+            QuestionType.MultipleMcq => "Multiple choice questions require at least one selected option.",
+            QuestionType.TrueFalse => "True/false questions require exactly one selected option.",
+            _ => "Objective questions require selected options."
+        };
+
+    private static string GetSingleSelectionMessage(QuestionType type) =>
+        type switch
+        {
+            QuestionType.TrueFalse => "True/false questions require exactly one selected option.",
+            _ => "Single choice questions require exactly one selected option."
+        };
+
+    private static string GetTextAnswerRequiredMessage(QuestionType type) =>
+        type switch
+        {
+            QuestionType.ShortAnswer => "Short answer questions require answerText.",
+            QuestionType.Essay => "Essay questions require answerText.",
+            _ => "This question requires answerText."
+        };
+
+    private static IReadOnlyList<QuestionOptionRequestDto> NormalizeQuestionOptions(
+        List<QuestionOptionRequestDto>? options) =>
+        options ?? [];
+
+    private static void ValidateQuestionRequest(
+        object dto,
+        IReadOnlyList<QuestionOptionRequestDto> options)
+    {
+        var validationResults = new List<ValidationResult>();
+        ValidateObject(dto, validationResults);
+
+        foreach (var option in options)
+        {
+            ValidateObject(option, validationResults);
+        }
+
+        if (validationResults.Count == 0)
+        {
+            return;
+        }
+
+        var message = string.Join(
+            " ",
+            validationResults
+                .Select(result => result.ErrorMessage)
+                .Where(message => !string.IsNullOrWhiteSpace(message))
+                .Distinct(StringComparer.Ordinal));
+
+        throw new ArgumentException(
+            string.IsNullOrWhiteSpace(message)
+                ? "Question request is invalid."
+                : message);
+    }
+
+    private static void ValidateObject(
+        object instance,
+        ICollection<ValidationResult> validationResults) =>
+        Validator.TryValidateObject(
+            instance,
+            new ValidationContext(instance),
+            validationResults,
+            validateAllProperties: true);
+
+    private static List<QuestionOption> BuildQuestionOptions(
+        IEnumerable<QuestionOptionRequestDto> options,
+        Guid? questionId = null)
+    {
+        var questionOptions = new List<QuestionOption>();
+
+        foreach (var option in options.OrderBy(o => o.OrderIndex))
+        {
+            var questionOption = new QuestionOption
+            {
+                Text = option.Text.Trim(),
+                IsCorrect = option.IsCorrect,
+                OrderIndex = option.OrderIndex
+            };
+
+            if (questionId.HasValue)
+            {
+                questionOption.QuestionId = questionId.Value;
+            }
+
+            questionOptions.Add(questionOption);
+        }
+
+        return questionOptions;
     }
 
     private static QuizResponseDto ToQuizResponseDto(Quiz quiz) =>
@@ -1421,6 +1678,38 @@ public class QuizService : IQuizService
         };
     }
 
+    private static StudentQuizResultDto ToStudentQuizResultDto(QuizAttempt attempt)
+    {
+        var attemptDetail = ToStudentAttemptDetailDto(attempt);
+
+        return new StudentQuizResultDto
+        {
+            QuizId = attemptDetail.QuizId,
+            QuizTitle = attemptDetail.QuizTitle,
+            CourseId = attempt.Quiz.CourseId,
+            CourseTitle = attempt.Quiz.Course.Title,
+            AttemptId = attemptDetail.AttemptId,
+            SubmittedAt = attemptDetail.SubmittedAt,
+            Status = attemptDetail.Status,
+            TotalMarks = attempt.Quiz.TotalMarks,
+            AwardedMarks = attemptDetail.Score,
+            Percentage = CalculatePercentage(attemptDetail.Score, attempt.Quiz.TotalMarks),
+            AreResultsPublished = attemptDetail.ResultsPublished,
+            QuestionResults = attemptDetail.Answers
+                .Select(answer => new StudentQuizQuestionResultDto
+                {
+                    QuestionId = answer.QuestionId,
+                    QuestionText = answer.QuestionText,
+                    QuestionType = answer.QuestionType,
+                    ReviewStatus = answer.ReviewStatus,
+                    AwardedMarks = answer.AwardedMarks,
+                    MaxMarks = answer.MaxMarks,
+                    Feedback = answer.TeacherFeedback
+                })
+                .ToList()
+        };
+    }
+
     private static QuizAttemptAnswerDto ToAttemptAnswerDto(StudentAnswer answer, bool includeResults) =>
         new()
         {
@@ -1458,6 +1747,21 @@ public class QuizService : IQuizService
         reviewStatus == StudentAnswerReviewStatus.PendingReview
             ? StudentAnswerReviewStatus.PendingReview
             : StudentAnswerReviewStatus.NotRequired;
+
+    private static decimal? CalculatePercentage(decimal? score, decimal totalMarks)
+    {
+        if (!score.HasValue)
+        {
+            return null;
+        }
+
+        if (totalMarks <= 0)
+        {
+            return 0;
+        }
+
+        return Math.Round(score.Value * 100m / totalMarks, 2);
+    }
 
     private static DateTime EnsureUtc(DateTime value) =>
         value.Kind == DateTimeKind.Utc ? value : value.ToUniversalTime();

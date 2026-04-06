@@ -25,6 +25,7 @@ public interface IQuizService
 
     Task<IReadOnlyList<StudentQuizListItemDto>> GetStudentQuizzesAsync(string studentId, CancellationToken cancellationToken);
     Task<StudentQuizDetailDto> GetStudentQuizByIdAsync(string studentId, Guid quizId, CancellationToken cancellationToken);
+    Task<StudentQuizResultDto> GetStudentQuizResultAsync(string studentId, Guid quizId, CancellationToken cancellationToken);
     Task<StartQuizAttemptResponseDto> StartQuizAttemptAsync(string studentId, Guid quizId, CancellationToken cancellationToken);
     Task<QuizAttemptDetailDto> GetStudentAttemptByIdAsync(string studentId, Guid attemptId, CancellationToken cancellationToken);
     Task<QuizAttemptDetailDto> SubmitQuizAttemptAsync(string studentId, Guid attemptId, SubmitQuizAttemptDto dto, CancellationToken cancellationToken);

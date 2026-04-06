@@ -30,7 +30,7 @@ public class CreateQuestionDto : IValidatableObject
     [Range(1, int.MaxValue)]
     public int OrderIndex { get; set; }
 
-    public List<QuestionOptionRequestDto> Options { get; set; } = new();
+    public List<QuestionOptionRequestDto>? Options { get; set; }
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
@@ -56,7 +56,7 @@ public class UpdateQuestionDto : IValidatableObject
     [Range(1, int.MaxValue)]
     public int OrderIndex { get; set; }
 
-    public List<QuestionOptionRequestDto> Options { get; set; } = new();
+    public List<QuestionOptionRequestDto>? Options { get; set; }
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
@@ -88,57 +88,62 @@ public class QuestionOptionResponseDto
 
 internal static class QuestionValidation
 {
+    private const string OptionsMemberName = nameof(CreateQuestionDto.Options);
+
     public static IEnumerable<ValidationResult> Validate(
         QuestionType type,
-        List<QuestionOptionRequestDto> options)
+        IReadOnlyCollection<QuestionOptionRequestDto>? options)
     {
+        var normalizedOptions = options ?? [];
+
         if (IsObjective(type))
         {
-            if (options.Count < 2)
+            if (type == QuestionType.TrueFalse)
             {
-                yield return new ValidationResult(
-                    "Objective questions require at least two options.",
-                    new[] { nameof(CreateQuestionDto.Options) });
-            }
-
-            var distinctOrderIndexes = options.Select(o => o.OrderIndex).Distinct().Count();
-            if (distinctOrderIndexes != options.Count)
-            {
-                yield return new ValidationResult(
-                    "Question option order indexes must be unique.",
-                    new[] { nameof(CreateQuestionDto.Options) });
-            }
-
-            var correctCount = options.Count(o => o.IsCorrect);
-            if (type == QuestionType.SingleMcq || type == QuestionType.TrueFalse)
-            {
-                if (correctCount != 1)
+                if (normalizedOptions.Count != 2)
                 {
-                    yield return new ValidationResult(
-                        "Single choice and true/false questions must have exactly one correct option.",
-                        new[] { nameof(CreateQuestionDto.Options) });
+                    yield return CreateOptionsValidationResult(
+                        "True/false questions must define exactly two options.");
                 }
             }
-
-            if (type == QuestionType.MultipleMcq && correctCount == 0)
+            else if (normalizedOptions.Count < 2)
             {
-                yield return new ValidationResult(
-                    "Multiple choice questions must have at least one correct option.",
-                    new[] { nameof(CreateQuestionDto.Options) });
+                yield return CreateOptionsValidationResult(
+                    GetMinimumOptionsMessage(type));
             }
 
-            if (type == QuestionType.TrueFalse && options.Count != 2)
+            var distinctOrderIndexes = normalizedOptions.Select(o => o.OrderIndex).Distinct().Count();
+            if (distinctOrderIndexes != normalizedOptions.Count)
             {
-                yield return new ValidationResult(
-                    "True/false questions must have exactly two options.",
-                    new[] { nameof(CreateQuestionDto.Options) });
+                yield return CreateOptionsValidationResult(
+                    "Question option order indexes must be unique.",
+                    new[] { OptionsMemberName });
+            }
+
+            var correctCount = normalizedOptions.Count(o => o.IsCorrect);
+            if (type == QuestionType.SingleMcq && normalizedOptions.Count >= 2 && correctCount != 1)
+            {
+                yield return CreateOptionsValidationResult(
+                    "Single choice questions must have exactly one correct option.");
+            }
+
+            if (type == QuestionType.MultipleMcq && normalizedOptions.Count >= 2 && correctCount == 0)
+            {
+                yield return CreateOptionsValidationResult(
+                    "Multiple choice questions must have at least one correct option.",
+                    new[] { OptionsMemberName });
+            }
+
+            if (type == QuestionType.TrueFalse && normalizedOptions.Count == 2 && correctCount != 1)
+            {
+                yield return CreateOptionsValidationResult(
+                    "True/false questions must have exactly one correct option.");
             }
         }
-        else if (options.Count > 0)
+        else if (normalizedOptions.Count > 0)
         {
-            yield return new ValidationResult(
-                "Subjective questions must not define options.",
-                new[] { nameof(CreateQuestionDto.Options) });
+            yield return CreateOptionsValidationResult(
+                GetSubjectiveOptionsMessage(type));
         }
     }
 
@@ -146,4 +151,26 @@ internal static class QuestionValidation
         type == QuestionType.SingleMcq ||
         type == QuestionType.MultipleMcq ||
         type == QuestionType.TrueFalse;
+
+    private static ValidationResult CreateOptionsValidationResult(
+        string message,
+        string[]? memberNames = null) =>
+        new(message, memberNames ?? [OptionsMemberName]);
+
+    private static string GetMinimumOptionsMessage(QuestionType type) =>
+        type switch
+        {
+            QuestionType.SingleMcq => "Single choice questions must define at least two options.",
+            QuestionType.MultipleMcq => "Multiple choice questions must define at least two options.",
+            _ => "Objective questions must define at least two options."
+        };
+
+    private static string GetSubjectiveOptionsMessage(QuestionType type) =>
+        type switch
+        {
+            QuestionType.Essay => "Essay questions must not define options.",
+            QuestionType.ShortAnswer => "Short answer questions must not define options.",
+            QuestionType.FileUpload => "File upload questions must not define options.",
+            _ => "This question type must not define options."
+        };
 }

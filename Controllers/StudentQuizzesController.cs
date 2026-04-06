@@ -62,6 +62,32 @@ public class StudentQuizzesController : ApiControllerBase
         }
     }
 
+    [HttpGet("{quizId:guid}/result")]
+    public async Task<IActionResult> GetQuizResult(
+        Guid quizId,
+        CancellationToken cancellationToken)
+    {
+        var studentId = GetCurrentUserId();
+        if (string.IsNullOrWhiteSpace(studentId))
+        {
+            return UnauthorizedResponse();
+        }
+
+        try
+        {
+            var result = await _quizService.GetStudentQuizResultAsync(studentId, quizId, cancellationToken);
+            var message = result.AreResultsPublished
+                ? "Quiz result retrieved successfully."
+                : "Quiz results are not yet released.";
+
+            return Success(result, message);
+        }
+        catch (Exception ex)
+        {
+            return HandleException(ex);
+        }
+    }
+
     [HttpPost("{quizId:guid}/attempts")]
     public async Task<IActionResult> StartAttempt(
         Guid quizId,

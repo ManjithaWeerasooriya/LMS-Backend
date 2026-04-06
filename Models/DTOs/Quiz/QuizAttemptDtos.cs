@@ -91,7 +91,7 @@ public class SubmitStudentAnswerDto : IValidatableObject
     [Required]
     public Guid QuestionId { get; set; }
 
-    public List<Guid> SelectedOptionIds { get; set; } = new();
+    public List<Guid>? SelectedOptionIds { get; set; }
 
     [MaxLength(8000)]
     public string? AnswerText { get; set; }
@@ -101,7 +101,8 @@ public class SubmitStudentAnswerDto : IValidatableObject
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
-        if (SelectedOptionIds.Count > 0 && (!string.IsNullOrWhiteSpace(AnswerText) || !string.IsNullOrWhiteSpace(FileReference)))
+        var selectedOptionIds = SelectedOptionIds ?? [];
+        if (selectedOptionIds.Count > 0 && (!string.IsNullOrWhiteSpace(AnswerText) || !string.IsNullOrWhiteSpace(FileReference)))
         {
             yield return new ValidationResult(
                 "Objective and text/file answer payloads cannot be mixed for the same question.",
