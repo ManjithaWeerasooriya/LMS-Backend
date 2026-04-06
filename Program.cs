@@ -219,6 +219,8 @@ app.UseHttpsRedirection();
 // ======================
 // MIDDLEWARE ORDER FIXED
 // ======================
+app.UseRouting();
+
 app.UseCors("AllowFrontend");
 
 app.UseAuthentication();
