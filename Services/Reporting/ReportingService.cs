@@ -106,7 +106,8 @@ public class ReportingService : IReportingService
         IQueryable<QuizAttempt> attemptsQuery = _dbContext.QuizAttempts
             .AsNoTracking()
             .Include(a => a.Quiz)
-            .ThenInclude(q => q.Course);
+            .ThenInclude(q => q.Course)
+            .Where(a => a.Status != QuizAttemptStatus.InProgress && a.Status != QuizAttemptStatus.Expired);
 
         if (!string.IsNullOrWhiteSpace(teacherId))
         {
@@ -122,7 +123,7 @@ public class ReportingService : IReportingService
                 CourseTitle = g.Key.CourseTitle,
                 Attempts = g.Count(),
                 AverageScorePercent = g.Key.TotalMarks > 0
-                    ? g.Average(a => (double)a.Score / g.Key.TotalMarks * 100.0)
+                    ? g.Average(a => (double)(a.Score / g.Key.TotalMarks) * 100.0)
                     : 0
             })
             .OrderByDescending(q => q.Attempts)
@@ -137,7 +138,7 @@ public class ReportingService : IReportingService
             ? 0
             : attemptsData
                 .Where(a => a.TotalMarks > 0)
-                .Select(a => (double)a.Score / a.TotalMarks * 100.0)
+                .Select(a => (double)(a.Score / a.TotalMarks) * 100.0)
                 .DefaultIfEmpty(0)
                 .Average();
 
@@ -157,7 +158,7 @@ public class ReportingService : IReportingService
         IQueryable<LiveClass> liveClassesQuery = _dbContext.LiveClasses
             .AsNoTracking()
             .Include(l => l.Course)
-            .ThenInclude(c => c.Enrollments);
+            .ThenInclude(c => c!.Enrollments);
 
         if (!string.IsNullOrWhiteSpace(teacherId))
         {
@@ -200,7 +201,7 @@ public class ReportingService : IReportingService
     {
         var attemptList = attempts
             .Where(a => a.TotalMarks > 0)
-            .Select(a => (double)a.Score / a.TotalMarks * 100.0)
+            .Select(a => (double)(a.Score / a.TotalMarks) * 100.0)
             .ToList();
 
         if (attemptList.Count == 0)
@@ -230,13 +231,13 @@ public class ReportingService : IReportingService
 
     private readonly struct AttemptScore
     {
-        public AttemptScore(int score, int totalMarks)
+        public AttemptScore(decimal score, decimal totalMarks)
         {
             Score = score;
             TotalMarks = totalMarks;
         }
 
-        public int Score { get; }
-        public int TotalMarks { get; }
+        public decimal Score { get; }
+        public decimal TotalMarks { get; }
     }
 }

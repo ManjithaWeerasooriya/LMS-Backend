@@ -1,6 +1,7 @@
 using LMS_Backend.Data;
 using LMS_Backend.Models.DTOs.Quiz;
 using LMS_Backend.Models.Entities;
+using LMS_Backend.Models.Exceptions;
 using LMS_Backend.Services;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
@@ -9,171 +10,264 @@ namespace LMS_Backend.Tests.Services;
 
 public class QuizServiceTests
 {
-    private static Course CreateCourse(string title) => new()
-    {
-        Id = Guid.NewGuid(),
-        Title = title,
-        TeacherId = "teacher-1",
-        Status = CourseStatus.Active
-    };
-
-    private static ApplicationDBContext GetDbContext()
+    private static ApplicationDBContext GetDbContext(string? databaseName = null)
     {
         var options = new DbContextOptionsBuilder<ApplicationDBContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .UseInMemoryDatabase(databaseName ?? Guid.NewGuid().ToString())
             .Options;
 
         return new ApplicationDBContext(options);
     }
 
-    [Fact]
-    public async Task CreateQuizAsync_Should_Create_Quiz_When_Course_Exists()
+    private static Course CreateCourse(string teacherId) => new()
     {
-        // Arrange
-        var context = GetDbContext();
+        Id = Guid.NewGuid(),
+        Title = "Algorithms",
+        TeacherId = teacherId,
+        Status = CourseStatus.Active
+    };
 
-        var course = CreateCourse("English Basics");
+    private static User CreateUser(string id, string userName, string firstName, string lastName) => new()
+    {
+        Id = id,
+        UserName = userName,
+        Email = $"{userName}@example.com",
+        FirstName = firstName,
+        LastName = lastName
+    };
 
+    [Fact]
+    public async Task CreateQuizAsync_Should_Create_Quiz_For_Owning_Teacher()
+    {
+        await using var context = GetDbContext();
+        var course = CreateCourse("teacher-1");
         context.Courses.Add(course);
         await context.SaveChangesAsync();
 
         var service = new QuizService(context);
 
-        var dto = new CreateQuizDto
-        {
-            CourseId = course.Id,
-            Title = "Grammar Quiz",
-            DurationMinutes = 30,
-            TotalMarks = 100,
-            PassingMarks = 40,
-            IsPublished = true
-        };
+        var result = await service.CreateQuizAsync(
+            "teacher-1",
+            new CreateQuizDto
+            {
+                CourseId = course.Id,
+                Title = "Midterm Quiz",
+                Description = "Covers units 1-3",
+                DurationMinutes = 45,
+                StartTimeUtc = DateTime.UtcNow.AddHours(-1),
+                EndTimeUtc = DateTime.UtcNow.AddHours(8),
+                TotalMarks = 100,
+                RandomizeQuestions = true,
+                AllowMultipleAttempts = false,
+                IsPublished = true,
+                AreResultsPublished = false
+            },
+            CancellationToken.None);
 
-        // Act
-        var result = await service.CreateQuizAsync(dto);
-
-        // Assert
-        Assert.NotNull(result);
-        Assert.Equal(dto.CourseId, result.CourseId);
-        Assert.Equal(dto.Title, result.Title);
-        Assert.Equal(dto.DurationMinutes, result.DurationMinutes);
-        Assert.Equal(dto.TotalMarks, result.TotalMarks);
-        Assert.Equal(dto.PassingMarks, result.PassingMarks);
+        Assert.Equal(course.Id, result.CourseId);
+        Assert.Equal("Midterm Quiz", result.Title);
+        Assert.Equal(100, result.TotalMarks);
+        Assert.True(result.RandomizeQuestions);
         Assert.True(result.IsPublished);
-
-        Assert.Equal(1, await context.Quizzes.CountAsync());
+        Assert.False(result.AreResultsPublished);
     }
 
     [Fact]
-    public async Task CreateQuizAsync_Should_Throw_When_Course_Does_Not_Exist()
+    public async Task CreateQuizAsync_Should_Reject_NonOwner_Teacher()
     {
-        // Arrange
-        var context = GetDbContext();
+        await using var context = GetDbContext();
+        var course = CreateCourse("teacher-1");
+        context.Courses.Add(course);
+        await context.SaveChangesAsync();
+
         var service = new QuizService(context);
 
-        var dto = new CreateQuizDto
+        var exception = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            service.CreateQuizAsync(
+                "teacher-2",
+                new CreateQuizDto
+                {
+                    CourseId = course.Id,
+                    Title = "Unauthorized Quiz",
+                    DurationMinutes = 30,
+                    StartTimeUtc = DateTime.UtcNow.AddMinutes(-10),
+                    EndTimeUtc = DateTime.UtcNow.AddHours(2),
+                    TotalMarks = 20,
+                    IsPublished = true
+                },
+                CancellationToken.None));
+
+        Assert.Equal("You do not have access to manage quizzes for this course.", exception.Message);
+    }
+
+    [Fact]
+    public async Task StartQuizAttemptAsync_Should_Reject_Student_Who_Is_Not_Enrolled()
+    {
+        await using var context = GetDbContext();
+        var course = CreateCourse("teacher-1");
+        context.Courses.Add(course);
+
+        var quiz = new Quiz
         {
-            CourseId = Guid.NewGuid(),
-            Title = "Grammar Quiz",
-            DurationMinutes = 30,
-            TotalMarks = 100,
-            PassingMarks = 40,
+            CourseId = course.Id,
+            Title = "Quiz 1",
+            DurationMinutes = 20,
+            StartTimeUtc = DateTime.UtcNow.AddHours(-1),
+            EndTimeUtc = DateTime.UtcNow.AddHours(2),
+            TotalMarks = 10,
             IsPublished = true
         };
 
-        // Act
-        var ex = await Assert.ThrowsAsync<Exception>(() => service.CreateQuizAsync(dto));
+        context.Quizzes.Add(quiz);
+        context.Questions.Add(new Question
+        {
+            QuizId = quiz.Id,
+            Text = "2 + 2 = ?",
+            Type = QuestionType.SingleMcq,
+            Marks = 10,
+            OrderIndex = 1,
+            Options = new List<QuestionOption>
+            {
+                new() { Text = "4", IsCorrect = true, OrderIndex = 1 },
+                new() { Text = "5", IsCorrect = false, OrderIndex = 2 }
+            }
+        });
 
-        // Assert
-        Assert.Equal("Course not found.", ex.Message);
+        await context.SaveChangesAsync();
+
+        var service = new QuizService(context);
+
+        var exception = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            service.StartQuizAttemptAsync("student-1", quiz.Id, CancellationToken.None));
+
+        Assert.Equal("You must be enrolled in the course to access this quiz.", exception.Message);
     }
 
     [Fact]
-    public async Task CreateQuizAsync_Should_Throw_When_PassingMarks_Greater_Than_TotalMarks()
+    public async Task SubmitQuizAttemptAsync_Should_AutoGrade_Objective_Answers_And_Require_Manual_Review_For_Subjective()
     {
-        // Arrange
-        var context = GetDbContext();
+        var databaseName = Guid.NewGuid().ToString();
 
-        var course = CreateCourse("English Basics");
+        await using var context = GetDbContext(databaseName);
+        context.Users.AddRange(
+            CreateUser("teacher-1", "teacher1", "Ada", "Lovelace"),
+            CreateUser("student-1", "student1", "Grace", "Hopper"));
+
+        var course = CreateCourse("teacher-1");
+        course.Enrollments.Add(new CourseEnrollment
+        {
+            CourseId = course.Id,
+            StudentId = "student-1"
+        });
 
         context.Courses.Add(course);
         await context.SaveChangesAsync();
 
         var service = new QuizService(context);
 
-        var dto = new CreateQuizDto
-        {
-            CourseId = course.Id,
-            Title = "Grammar Quiz",
-            DurationMinutes = 30,
-            TotalMarks = 50,
-            PassingMarks = 60,
-            IsPublished = true
-        };
-
-        // Act
-        var ex = await Assert.ThrowsAsync<Exception>(() => service.CreateQuizAsync(dto));
-
-        // Assert
-        Assert.Equal("Passing marks cannot be greater than total marks.", ex.Message);
-    }
-
-    [Fact]
-    public async Task GetQuizzesByCourseAsync_Should_Return_Only_Matching_Course_Quizzes()
-    {
-        // Arrange
-        var context = GetDbContext();
-
-        var course1 = CreateCourse("Course 1");
-        var course2 = CreateCourse("Course 2");
-
-        context.Courses.AddRange(course1, course2);
-
-        context.Quizzes.AddRange(
-            new Quiz
+        var quiz = await service.CreateQuizAsync(
+            "teacher-1",
+            new CreateQuizDto
             {
-                Id = Guid.NewGuid(),
-                CourseId = course1.Id,
-                Title = "Quiz A",
-                DurationMinutes = 20,
-                TotalMarks = 100,
-                PassingMarks = 40,
+                CourseId = course.Id,
+                Title = "Assessment 1",
+                DurationMinutes = 60,
+                StartTimeUtc = DateTime.UtcNow.AddHours(-1),
+                EndTimeUtc = DateTime.UtcNow.AddHours(3),
+                TotalMarks = 10,
+                RandomizeQuestions = false,
+                AllowMultipleAttempts = false,
                 IsPublished = true,
-                CreatedAt = DateTime.UtcNow
+                AreResultsPublished = true
             },
-            new Quiz
+            CancellationToken.None);
+
+        var mcq = await service.CreateQuestionAsync(
+            "teacher-1",
+            quiz.Id,
+            new CreateQuestionDto
             {
-                Id = Guid.NewGuid(),
-                CourseId = course1.Id,
-                Title = "Quiz B",
-                DurationMinutes = 25,
-                TotalMarks = 100,
-                PassingMarks = 50,
-                IsPublished = false,
-                CreatedAt = DateTime.UtcNow.AddMinutes(-1)
+                Text = "The capital of France is?",
+                Type = QuestionType.SingleMcq,
+                Marks = 4,
+                OrderIndex = 1,
+                Options = new List<QuestionOptionRequestDto>
+                {
+                    new() { Text = "Paris", IsCorrect = true, OrderIndex = 1 },
+                    new() { Text = "Rome", IsCorrect = false, OrderIndex = 2 }
+                }
             },
-            new Quiz
+            CancellationToken.None);
+
+        var essay = await service.CreateQuestionAsync(
+            "teacher-1",
+            quiz.Id,
+            new CreateQuestionDto
             {
-                Id = Guid.NewGuid(),
-                CourseId = course2.Id,
-                Title = "Quiz C",
-                DurationMinutes = 15,
-                TotalMarks = 50,
-                PassingMarks = 20,
-                IsPublished = true,
-                CreatedAt = DateTime.UtcNow
-            }
-        );
+                Text = "Explain clean architecture.",
+                Type = QuestionType.Essay,
+                Marks = 6,
+                OrderIndex = 2
+            },
+            CancellationToken.None);
 
-        await context.SaveChangesAsync();
+        await using var startContext = GetDbContext(databaseName);
+        var startService = new QuizService(startContext);
+        var attempt = await startService.StartQuizAttemptAsync("student-1", quiz.Id, CancellationToken.None);
+        Assert.NotEqual(Guid.Empty, attempt.AttemptId);
 
-        var service = new QuizService(context);
+        await using var submitContext = GetDbContext(databaseName);
+        var submitService = new QuizService(submitContext);
+        var submittedAttempt = await submitService.SubmitQuizAttemptAsync(
+            "student-1",
+            attempt.AttemptId,
+            new SubmitQuizAttemptDto
+            {
+                Answers = new List<SubmitStudentAnswerDto>
+                {
+                    new()
+                    {
+                        QuestionId = mcq.Id,
+                        SelectedOptionIds = new List<Guid>
+                        {
+                            mcq.Options.Single(o => o.IsCorrect).Id
+                        }
+                    },
+                    new()
+                    {
+                        QuestionId = essay.Id,
+                        AnswerText = "A layered approach that protects the domain."
+                    }
+                }
+            },
+            CancellationToken.None);
 
-        // Act
-        var result = await service.GetQuizzesByCourseAsync(course1.Id);
+        Assert.Equal(QuizAttemptStatus.PendingReview, submittedAttempt.Status);
+        Assert.Equal(4, submittedAttempt.Score);
 
-        // Assert
-        Assert.Equal(2, result.Count);
-        Assert.All(result, q => Assert.Equal(course1.Id, q.CourseId));
+        var essayAnswer = submittedAttempt.Answers.Single(a => a.QuestionId == essay.Id);
+        Assert.Equal(StudentAnswerReviewStatus.PendingReview, essayAnswer.ReviewStatus);
+        Assert.Equal(0, essayAnswer.AwardedMarks);
+
+        await using var gradingContext = GetDbContext(databaseName);
+        var gradingService = new QuizService(gradingContext);
+        var gradedAttempt = await gradingService.GradeAnswerAsync(
+            "teacher-1",
+            quiz.Id,
+            submittedAttempt.AttemptId,
+            essayAnswer.AnswerId,
+            new ManualGradeAnswerDto
+            {
+                AwardedMarks = 5.5m,
+                TeacherFeedback = "Good coverage of boundaries and application layers."
+            },
+            CancellationToken.None);
+
+        Assert.Equal(QuizAttemptStatus.Graded, gradedAttempt.Status);
+        Assert.Equal(9.5m, gradedAttempt.Score);
+
+        var gradedEssayAnswer = gradedAttempt.Answers.Single(a => a.AnswerId == essayAnswer.AnswerId);
+        Assert.Equal(StudentAnswerReviewStatus.Reviewed, gradedEssayAnswer.ReviewStatus);
+        Assert.Equal(5.5m, gradedEssayAnswer.AwardedMarks);
     }
 }

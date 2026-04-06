@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using Azure.Storage.Blobs;
 using LMS_Backend.Data;
 using LMS_Backend.Infrastructure.Auth;
 using LMS_Backend.Infrastructure.Seed;
@@ -37,7 +38,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowFrontend", policy =>
     {
         policy.WithOrigins(
-                "https://lms-three-amber.vercel.app",
+                "https://lmsfrontend-umber.vercel.app",
                 "http://localhost:3000",
                 "https://localhost:3000"
             )
@@ -55,7 +56,38 @@ if (string.IsNullOrWhiteSpace(connectionString))
 }
 
 builder.Services.AddDbContext<ApplicationDBContext>(options =>
-    options.UseSqlServer(connectionString));
+    options.UseSqlServer(connectionString, sql =>
+    {
+        sql.EnableRetryOnFailure(
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(10),
+            errorNumbersToAdd: null);
+    }));
+
+var azureStorageConnectionString = FirstNonEmpty(
+    builder.Configuration[$"{AzureStorageOptions.SectionName}:ConnectionString"],
+    builder.Configuration["AZURE_CONN"]);
+var azureStorageContainerName = FirstNonEmpty(
+    builder.Configuration[$"{AzureStorageOptions.SectionName}:ContainerName"],
+    AzureStorageOptions.DefaultContainerName);
+
+if (string.IsNullOrWhiteSpace(azureStorageConnectionString))
+{
+    throw new InvalidOperationException(
+        $"Azure Blob Storage connection string is not configured. Set '{AzureStorageOptions.SectionName}:ConnectionString'.");
+}
+
+builder.Services.Configure<AzureStorageOptions>(options =>
+{
+    options.ConnectionString = azureStorageConnectionString;
+    options.ContainerName = string.IsNullOrWhiteSpace(azureStorageContainerName)
+        ? AzureStorageOptions.DefaultContainerName
+        : azureStorageContainerName;
+});
+builder.Services.AddSingleton(_ => CreateBlobServiceClient(
+    azureStorageConnectionString,
+    builder.Environment.IsDevelopment()));
+builder.Services.AddScoped<AzureStorageService>();
 
 // Email
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
@@ -165,9 +197,16 @@ if (testConnectionRequested)
     return;
 }
 
-// Apply migrations + seed
-await ApplyPendingMigrationsAsync(app);
-await SeedIdentityAsync(app);
+// Apply migrations + seed (TEMP DISABLED TO PREVENT STARTUP CRASH)
+try
+{
+    // await ApplyPendingMigrationsAsync(app);
+    // await SeedIdentityAsync(app);
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"Startup DB error: {ex}");
+}
 
 if (app.Environment.IsDevelopment())
 {
@@ -237,6 +276,22 @@ static async Task RunConnectionTestAsync(WebApplication app)
         Console.Error.WriteLine($"Database connection failed: {ex.Message}");
         Environment.ExitCode = 1;
     }
+}
+
+static string? FirstNonEmpty(params string?[] values)
+{
+    return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+}
+
+static BlobServiceClient CreateBlobServiceClient(string connectionString, bool isDevelopment)
+{
+    if (isDevelopment && connectionString.Contains("UseDevelopmentStorage=true", StringComparison.OrdinalIgnoreCase))
+    {
+        var options = new BlobClientOptions(BlobClientOptions.ServiceVersion.V2021_12_02);
+        return new BlobServiceClient(connectionString, options);
+    }
+
+    return new BlobServiceClient(connectionString);
 }
 
 static void LoadEnvFile()
