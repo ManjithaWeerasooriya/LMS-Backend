@@ -874,6 +874,38 @@ public class QuizService : IQuizService
         };
     }
 
+    public async Task<StudentQuizResultDto> GetStudentQuizResultAsync(
+        string studentId,
+        Guid quizId,
+        CancellationToken cancellationToken)
+    {
+        await EnsureStudentEnrolledForQuizResultAsync(studentId, quizId, cancellationToken);
+
+        var latestAttemptId = await _context.QuizAttempts
+            .AsNoTracking()
+            .Where(a =>
+                a.QuizId == quizId &&
+                a.StudentId == studentId &&
+                a.SubmittedAt.HasValue)
+            .OrderByDescending(a => a.SubmittedAt)
+            .ThenByDescending(a => a.AttemptNumber)
+            .Select(a => a.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (latestAttemptId == Guid.Empty)
+        {
+            throw new NotFoundException("No submitted attempt found for this quiz.");
+        }
+
+        var attempt = await LoadAttemptAsync(latestAttemptId, cancellationToken);
+        if (attempt == null)
+        {
+            throw new NotFoundException("No submitted attempt found for this quiz.");
+        }
+
+        return ToStudentQuizResultDto(attempt);
+    }
+
     public async Task<QuizAttemptDetailDto> GetStudentAttemptByIdAsync(
         string studentId,
         Guid attemptId,
@@ -1058,6 +1090,34 @@ public class QuizService : IQuizService
         throw new ForbiddenException("This quiz is not available to you.");
     }
 
+    private async Task EnsureStudentEnrolledForQuizResultAsync(
+        string studentId,
+        Guid quizId,
+        CancellationToken cancellationToken)
+    {
+        var access = await _context.Quizzes
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .Where(q => q.Id == quizId)
+            .Select(q => new
+            {
+                q.Id,
+                q.IsDeleted,
+                IsEnrolled = q.Course.Enrollments.Any(e => e.StudentId == studentId)
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (access == null || access.IsDeleted)
+        {
+            throw new NotFoundException("Quiz not found.");
+        }
+
+        if (!access.IsEnrolled)
+        {
+            throw new ForbiddenException("You must be enrolled in the course to access this quiz result.");
+        }
+    }
+
     private static void EnsureQuizCanBeStarted(Quiz quiz, DateTime nowUtc, string studentId)
     {
         if (!quiz.Course.Enrollments.Any(e => e.StudentId == studentId))
@@ -1139,6 +1199,10 @@ public class QuizService : IQuizService
 
         await _context.Entry(attempt)
             .Reference(a => a.Quiz)
+            .LoadAsync(cancellationToken);
+
+        await _context.Entry(attempt.Quiz)
+            .Reference(q => q.Course)
             .LoadAsync(cancellationToken);
 
         await _context.Entry(attempt.Quiz)
@@ -1602,6 +1666,38 @@ public class QuizService : IQuizService
         };
     }
 
+    private static StudentQuizResultDto ToStudentQuizResultDto(QuizAttempt attempt)
+    {
+        var attemptDetail = ToStudentAttemptDetailDto(attempt);
+
+        return new StudentQuizResultDto
+        {
+            QuizId = attemptDetail.QuizId,
+            QuizTitle = attemptDetail.QuizTitle,
+            CourseId = attempt.Quiz.CourseId,
+            CourseTitle = attempt.Quiz.Course.Title,
+            AttemptId = attemptDetail.AttemptId,
+            SubmittedAt = attemptDetail.SubmittedAt,
+            Status = attemptDetail.Status,
+            TotalMarks = attempt.Quiz.TotalMarks,
+            AwardedMarks = attemptDetail.Score,
+            Percentage = CalculatePercentage(attemptDetail.Score, attempt.Quiz.TotalMarks),
+            AreResultsPublished = attemptDetail.ResultsPublished,
+            QuestionResults = attemptDetail.Answers
+                .Select(answer => new StudentQuizQuestionResultDto
+                {
+                    QuestionId = answer.QuestionId,
+                    QuestionText = answer.QuestionText,
+                    QuestionType = answer.QuestionType,
+                    ReviewStatus = answer.ReviewStatus,
+                    AwardedMarks = answer.AwardedMarks,
+                    MaxMarks = answer.MaxMarks,
+                    Feedback = answer.TeacherFeedback
+                })
+                .ToList()
+        };
+    }
+
     private static QuizAttemptAnswerDto ToAttemptAnswerDto(StudentAnswer answer, bool includeResults) =>
         new()
         {
@@ -1639,6 +1735,21 @@ public class QuizService : IQuizService
         reviewStatus == StudentAnswerReviewStatus.PendingReview
             ? StudentAnswerReviewStatus.PendingReview
             : StudentAnswerReviewStatus.NotRequired;
+
+    private static decimal? CalculatePercentage(decimal? score, decimal totalMarks)
+    {
+        if (!score.HasValue)
+        {
+            return null;
+        }
+
+        if (totalMarks <= 0)
+        {
+            return 0;
+        }
+
+        return Math.Round(score.Value * 100m / totalMarks, 2);
+    }
 
     private static DateTime EnsureUtc(DateTime value) =>
         value.Kind == DateTimeKind.Utc ? value : value.ToUniversalTime();
