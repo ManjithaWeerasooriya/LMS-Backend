@@ -79,8 +79,17 @@ public class StudentDashboardService
                 q.StartTimeUtc <= nowUtc &&
                 q.EndTimeUtc >= nowUtc &&
                 q.Course.Enrollments.Any(e => e.StudentId == studentId) &&
-                !q.Attempts.Any(a => a.StudentId == studentId && a.Status == QuizAttemptStatus.InProgress) &&
-                (q.AllowMultipleAttempts || !q.Attempts.Any(a => a.StudentId == studentId)))
+                !q.Attempts.Any(a =>
+                    a.StudentId == studentId &&
+                    a.Status == QuizAttemptStatus.InProgress &&
+                    a.SubmittedAt == null &&
+                    a.DeadlineUtc >= nowUtc) &&
+                (q.AllowMultipleAttempts || !q.Attempts.Any(a =>
+                    a.StudentId == studentId &&
+                    (a.Status == QuizAttemptStatus.Submitted ||
+                     a.Status == QuizAttemptStatus.PendingReview ||
+                     a.Status == QuizAttemptStatus.Graded ||
+                     a.SubmittedAt != null))))
             .OrderBy(q => q.StartTimeUtc)
             .Take(5)
             .Select(q => new StudentDashboardQuizItemDto

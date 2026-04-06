@@ -4,7 +4,9 @@ using LMS_Backend.Data;
 using LMS_Backend.Models.DTOs.Quiz;
 using LMS_Backend.Models.Entities;
 using LMS_Backend.Services;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace LMS_Backend.Tests.Questions;
 
@@ -20,19 +22,7 @@ public class QuestionValidationTests
         await context.SaveChangesAsync();
 
         var service = new QuizService(context);
-        var quiz = await service.CreateQuizAsync("teacher-1", new CreateQuizDto
-        {
-            CourseId = course.Id,
-            Title = "Order Quiz",
-            DurationMinutes = 10,
-            StartTimeUtc = DateTime.UtcNow.AddMinutes(-5),
-            EndTimeUtc = DateTime.UtcNow.AddHours(1),
-            TotalMarks = 10,
-            RandomizeQuestions = false,
-            AllowMultipleAttempts = false,
-            IsPublished = true,
-            AreResultsPublished = true
-        }, CancellationToken.None);
+        var quiz = await CreateQuizAsync(service, course.Id, 10);
 
         await service.CreateQuestionAsync("teacher-1", quiz.Id, BuildMcq(1, 5), CancellationToken.None);
 
@@ -52,19 +42,7 @@ public class QuestionValidationTests
         await context.SaveChangesAsync();
 
         var service = new QuizService(context);
-        var quiz = await service.CreateQuizAsync("teacher-1", new CreateQuizDto
-        {
-            CourseId = course.Id,
-            Title = "Marks Quiz",
-            DurationMinutes = 10,
-            StartTimeUtc = DateTime.UtcNow.AddMinutes(-5),
-            EndTimeUtc = DateTime.UtcNow.AddHours(1),
-            TotalMarks = 5,
-            RandomizeQuestions = false,
-            AllowMultipleAttempts = false,
-            IsPublished = true,
-            AreResultsPublished = true
-        }, CancellationToken.None);
+        var quiz = await CreateQuizAsync(service, course.Id, 5);
 
         await service.CreateQuestionAsync("teacher-1", quiz.Id, BuildMcq(1, 5), CancellationToken.None);
 
@@ -74,25 +52,172 @@ public class QuestionValidationTests
         Assert.Contains("sum of question marks", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public void CreateQuestionDto_SingleChoice_WithSingleOption_FailsValidation()
+    [Theory]
+    [InlineData(typeof(CreateQuestionDto))]
+    [InlineData(typeof(UpdateQuestionDto))]
+    public void QuestionRequestDtos_OptionsMetadata_IsNotRequired(Type dtoType)
     {
-        var dto = new CreateQuestionDto
-        {
-            Text = "Capital?",
-            Type = QuestionType.SingleMcq,
-            Marks = 1,
-            OrderIndex = 1,
-            Options = new List<QuestionOptionRequestDto>
-            {
-                new() { Text = "Paris", IsCorrect = true, OrderIndex = 1 }
-            }
-        };
+        var services = new ServiceCollection();
+        services.AddControllers();
 
-        var validationResults = Validate(dto);
-        Assert.Contains(validationResults, r =>
-            r.ErrorMessage != null &&
-            r.ErrorMessage.Contains("at least two options", StringComparison.OrdinalIgnoreCase));
+        using var provider = services.BuildServiceProvider();
+        var metadataProvider = provider.GetRequiredService<IModelMetadataProvider>();
+        var metadata = metadataProvider.GetMetadataForType(dtoType);
+        var optionsMetadata = metadata.Properties.Single(property =>
+            property.PropertyName == nameof(CreateQuestionDto.Options));
+
+        Assert.False(optionsMetadata.IsRequired);
+    }
+
+    [Theory]
+    [InlineData(QuestionType.Essay)]
+    [InlineData(QuestionType.ShortAnswer)]
+    [InlineData(QuestionType.FileUpload)]
+    public async Task CreateQuestionAsync_SubjectiveTypesWithoutOptions_Succeed(QuestionType type)
+    {
+        var dbName = Guid.NewGuid().ToString();
+        await using var context = CreateDbContext(dbName);
+        var course = CreateCourse("teacher-1");
+        context.Courses.Add(course);
+        await context.SaveChangesAsync();
+
+        var service = new QuizService(context);
+        var quiz = await CreateQuizAsync(service, course.Id, 10);
+
+        var result = await service.CreateQuestionAsync(
+            "teacher-1",
+            quiz.Id,
+            new CreateQuestionDto
+            {
+                Text = $"Prompt for {type}",
+                Type = type,
+                Marks = 5,
+                OrderIndex = 1
+            },
+            CancellationToken.None);
+
+        Assert.Equal(type, result.Type);
+        Assert.Empty(result.Options);
+    }
+
+    [Fact]
+    public async Task CreateQuestionAsync_SingleChoiceWithoutOptions_FailsValidation()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        await using var context = CreateDbContext(dbName);
+        var course = CreateCourse("teacher-1");
+        context.Courses.Add(course);
+        await context.SaveChangesAsync();
+
+        var service = new QuizService(context);
+        var quiz = await CreateQuizAsync(service, course.Id, 10);
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.CreateQuestionAsync(
+                "teacher-1",
+                quiz.Id,
+                new CreateQuestionDto
+                {
+                    Text = "Capital?",
+                    Type = QuestionType.SingleMcq,
+                    Marks = 1,
+                    OrderIndex = 1
+                },
+                CancellationToken.None));
+
+        Assert.Contains("Single choice questions must define at least two options.", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CreateQuestionAsync_SingleChoiceWithoutCorrectOption_FailsValidation()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        await using var context = CreateDbContext(dbName);
+        var course = CreateCourse("teacher-1");
+        context.Courses.Add(course);
+        await context.SaveChangesAsync();
+
+        var service = new QuizService(context);
+        var quiz = await CreateQuizAsync(service, course.Id, 10);
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.CreateQuestionAsync(
+                "teacher-1",
+                quiz.Id,
+                new CreateQuestionDto
+                {
+                    Text = "Capital?",
+                    Type = QuestionType.SingleMcq,
+                    Marks = 1,
+                    OrderIndex = 1,
+                    Options = new List<QuestionOptionRequestDto>
+                    {
+                        new() { Text = "Paris", IsCorrect = false, OrderIndex = 1 },
+                        new() { Text = "Rome", IsCorrect = false, OrderIndex = 2 }
+                    }
+                },
+                CancellationToken.None));
+
+        Assert.Contains("Single choice questions must have exactly one correct option.", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CreateQuestionAsync_MultipleChoiceWithEmptyOptions_FailsValidation()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        await using var context = CreateDbContext(dbName);
+        var course = CreateCourse("teacher-1");
+        context.Courses.Add(course);
+        await context.SaveChangesAsync();
+
+        var service = new QuizService(context);
+        var quiz = await CreateQuizAsync(service, course.Id, 10);
+
+        var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.CreateQuestionAsync(
+                "teacher-1",
+                quiz.Id,
+                new CreateQuestionDto
+                {
+                    Text = "Pick all correct answers",
+                    Type = QuestionType.MultipleMcq,
+                    Marks = 2,
+                    OrderIndex = 1,
+                    Options = new List<QuestionOptionRequestDto>()
+                },
+                CancellationToken.None));
+
+        Assert.Contains("Multiple choice questions must define at least two options.", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task UpdateQuestionAsync_SubjectiveTypeWithoutOptions_SucceedsAndClearsOptions()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        await using var context = CreateDbContext(dbName);
+        var course = CreateCourse("teacher-1");
+        context.Courses.Add(course);
+        await context.SaveChangesAsync();
+
+        var service = new QuizService(context);
+        var quiz = await CreateQuizAsync(service, course.Id, 10);
+        var question = await service.CreateQuestionAsync("teacher-1", quiz.Id, BuildMcq(1, 5), CancellationToken.None);
+
+        var updated = await service.UpdateQuestionAsync(
+            "teacher-1",
+            quiz.Id,
+            question.Id,
+            new UpdateQuestionDto
+            {
+                Text = "Explain the concept.",
+                Type = QuestionType.Essay,
+                Marks = 5,
+                OrderIndex = 1
+            },
+            CancellationToken.None);
+
+        Assert.Equal(QuestionType.Essay, updated.Type);
+        Assert.Empty(updated.Options);
     }
 
     [Fact]
@@ -111,9 +236,26 @@ public class QuestionValidationTests
         };
 
         var validationResults = Validate(dto);
-        Assert.Contains(validationResults, r =>
-            r.ErrorMessage != null &&
-            r.ErrorMessage.Contains("must not define options", StringComparison.OrdinalIgnoreCase));
+
+        Assert.Contains(validationResults, result =>
+            result.ErrorMessage != null &&
+            result.ErrorMessage.Contains("Essay questions must not define options.", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void UpdateQuestionDto_ShortAnswer_WithoutOptions_PassesValidation()
+    {
+        var dto = new UpdateQuestionDto
+        {
+            Text = "Provide a short answer.",
+            Type = QuestionType.ShortAnswer,
+            Marks = 2,
+            OrderIndex = 1
+        };
+
+        var validationResults = Validate(dto);
+
+        Assert.Empty(validationResults);
     }
 
     private static CreateQuestionDto BuildMcq(int orderIndex, decimal marks) => new()
@@ -144,6 +286,27 @@ public class QuestionValidationTests
         TeacherId = teacherId,
         Status = CourseStatus.Active
     };
+
+    private static Task<QuizResponseDto> CreateQuizAsync(
+        QuizService service,
+        Guid courseId,
+        decimal totalMarks) =>
+        service.CreateQuizAsync(
+            "teacher-1",
+            new CreateQuizDto
+            {
+                CourseId = courseId,
+                Title = "Validation Quiz",
+                DurationMinutes = 10,
+                StartTimeUtc = DateTime.UtcNow.AddMinutes(-5),
+                EndTimeUtc = DateTime.UtcNow.AddHours(1),
+                TotalMarks = totalMarks,
+                RandomizeQuestions = false,
+                AllowMultipleAttempts = false,
+                IsPublished = true,
+                AreResultsPublished = true
+            },
+            CancellationToken.None);
 
     private static List<ValidationResult> Validate(object dto)
     {
