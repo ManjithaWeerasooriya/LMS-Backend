@@ -39,6 +39,7 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins(
                 "https://lmsfrontend-umber.vercel.app",
+                "https://lms-gold-tau.vercel.app",
                 "http://localhost:3000",
                 "https://localhost:3000"
             )
