@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using LMS_Backend.Controllers;
@@ -181,5 +182,90 @@ public class UsersControllerUpdateMeTests
         Assert.Equal("New", dto.FirstName);
         Assert.Equal("Name", dto.LastName);
         Assert.Equal("123", dto.Phone);
+    }
+
+    [Fact]
+    public async Task UploadProfileImage_ReturnsValidationProblem_WhenModelStateInvalid()
+    {
+        var user = new User { Id = "user-id" };
+        var controller = CreateControllerWithUser(user);
+        var profileImageServiceMock = new Mock<IProfileImageService>();
+        controller.ModelState.AddModelError("File", "Required");
+
+        var result = await controller.UploadProfileImage(
+            new UploadProfileImageRequest(),
+            profileImageServiceMock.Object,
+            CancellationToken.None);
+
+        Assert.IsType<ObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task UploadProfileImage_ReturnsUnauthorized_WhenCurrentUserMissing()
+    {
+        var controller = CreateControllerWithUser(null);
+        var profileImageServiceMock = new Mock<IProfileImageService>();
+
+        var result = await controller.UploadProfileImage(
+            new UploadProfileImageRequest { File = CreateFormFile("avatar.png", "image/png") },
+            profileImageServiceMock.Object,
+            CancellationToken.None);
+
+        Assert.IsType<UnauthorizedResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task UploadProfileImage_ReturnsUpdatedProfile_WhenSuccessful()
+    {
+        var user = new User
+        {
+            Id = "user-id",
+            Email = "user@example.com",
+            FirstName = "Old",
+            LastName = "Name",
+            Phone = "111",
+            Status = UserStatus.Active
+        };
+
+        var controller = CreateControllerWithUser(user);
+        var profileImageServiceMock = new Mock<IProfileImageService>();
+
+        _userManagerMock
+            .Setup(m => m.FindByIdAsync(user.Id))
+            .ReturnsAsync(user);
+
+        profileImageServiceMock
+            .Setup(m => m.UploadProfileImageAsync(user.Id, It.IsAny<IFormFile>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User
+            {
+                Id = user.Id,
+                Email = user.Email,
+                FirstName = user.FirstName,
+                LastName = user.LastName,
+                Phone = user.Phone,
+                Status = user.Status,
+                ProfileImageUrl = "https://cdn.example.com/profile.png"
+            });
+
+        var result = await controller.UploadProfileImage(
+            new UploadProfileImageRequest { File = CreateFormFile("avatar.png", "image/png") },
+            profileImageServiceMock.Object,
+            CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var dto = Assert.IsType<UserProfileRequest>(ok.Value);
+        Assert.Equal("https://cdn.example.com/profile.png", dto.ProfileImageUrl);
+    }
+
+    private static IFormFile CreateFormFile(string fileName, string contentType)
+    {
+        var bytes = Encoding.UTF8.GetBytes("test-image");
+        var stream = new MemoryStream(bytes);
+
+        return new FormFile(stream, 0, bytes.Length, "file", fileName)
+        {
+            Headers = new HeaderDictionary(),
+            ContentType = contentType
+        };
     }
 }

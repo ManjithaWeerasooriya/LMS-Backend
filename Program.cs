@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
-using Azure.Storage.Blobs;
 using LMS_Backend.Data;
 using LMS_Backend.Infrastructure.Auth;
 using LMS_Backend.Infrastructure.Seed;
@@ -71,12 +70,9 @@ var azureStorageConnectionString = FirstNonEmpty(
 var azureStorageContainerName = FirstNonEmpty(
     builder.Configuration[$"{AzureStorageOptions.SectionName}:ContainerName"],
     AzureStorageOptions.DefaultContainerName);
-
-if (string.IsNullOrWhiteSpace(azureStorageConnectionString))
-{
-    throw new InvalidOperationException(
-        $"Azure Blob Storage connection string is not configured. Set '{AzureStorageOptions.SectionName}:ConnectionString'.");
-}
+var profileImagesContainerName = FirstNonEmpty(
+    builder.Configuration[$"{AzureStorageOptions.SectionName}:ProfileImagesContainerName"],
+    AzureStorageOptions.DefaultProfileImagesContainerName);
 
 builder.Services.Configure<AzureStorageOptions>(options =>
 {
@@ -84,10 +80,10 @@ builder.Services.Configure<AzureStorageOptions>(options =>
     options.ContainerName = string.IsNullOrWhiteSpace(azureStorageContainerName)
         ? AzureStorageOptions.DefaultContainerName
         : azureStorageContainerName;
+    options.ProfileImagesContainerName = string.IsNullOrWhiteSpace(profileImagesContainerName)
+        ? AzureStorageOptions.DefaultProfileImagesContainerName
+        : profileImagesContainerName;
 });
-builder.Services.AddSingleton(_ => CreateBlobServiceClient(
-    azureStorageConnectionString,
-    builder.Environment.IsDevelopment()));
 builder.Services.AddScoped<AzureStorageService>();
 
 // Email
@@ -138,6 +134,7 @@ builder.Services.AddAuthorization(options =>
 
 // Services
 builder.Services.AddScoped<TokenService>();
+builder.Services.AddScoped<IProfileImageService, ProfileImageService>();
 builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<TeacherDashboardService>();
 builder.Services.AddScoped<CourseService>();
@@ -284,17 +281,6 @@ static async Task RunConnectionTestAsync(WebApplication app)
 static string? FirstNonEmpty(params string?[] values)
 {
     return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
-}
-
-static BlobServiceClient CreateBlobServiceClient(string connectionString, bool isDevelopment)
-{
-    if (isDevelopment && connectionString.Contains("UseDevelopmentStorage=true", StringComparison.OrdinalIgnoreCase))
-    {
-        var options = new BlobClientOptions(BlobClientOptions.ServiceVersion.V2021_12_02);
-        return new BlobServiceClient(connectionString, options);
-    }
-
-    return new BlobServiceClient(connectionString);
 }
 
 static void LoadEnvFile()
