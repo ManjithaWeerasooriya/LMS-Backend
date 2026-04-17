@@ -109,6 +109,48 @@ public class UsersController : ControllerBase
         return NoContent();
     }
 
+    [HttpPost("profile-image")]
+    [Consumes("multipart/form-data")]
+    public async Task<ActionResult<UserProfileRequest>> UploadProfileImage(
+        [FromForm] UploadProfileImageRequest request,
+        [FromServices] IProfileImageService profileImageService,
+        CancellationToken ct)
+    {
+        if (!ModelState.IsValid)
+        {
+            return ValidationProblem(ModelState);
+        }
+
+        var user = await GetCurrentUserAsync(ct);
+        if (user is null)
+        {
+            return Unauthorized();
+        }
+
+        try
+        {
+            var updatedUser = await profileImageService.UploadProfileImageAsync(user.Id, request.File!, ct);
+            return Ok(ToProfileDto(updatedUser));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Profile image upload failed for user {UserId}.", user.Id);
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected profile image upload failure for user {UserId}.", user.Id);
+            return StatusCode(StatusCodes.Status500InternalServerError, new
+            {
+                message = "Profile image upload failed unexpectedly."
+            });
+        }
+    }
+
     [HttpPost("me/delete-request")]
     public async Task<IActionResult> RequestAccountDeletion(CancellationToken ct)
     {
@@ -237,6 +279,7 @@ public class UsersController : ControllerBase
         FirstName = user.FirstName,
         LastName = user.LastName,
         Phone = user.Phone,
+        ProfileImageUrl = user.ProfileImageUrl,
         Status = user.Status,
         CreatedAt = user.CreatedAt,
         LastLoginAt = user.LastLoginAt
