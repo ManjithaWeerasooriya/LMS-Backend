@@ -47,6 +47,18 @@ public class TokenService
 
         claims.Add(new Claim(AppClaimTypes.Role, primaryRole));
 
+        foreach (var role in roles
+            .Where(role => !string.IsNullOrWhiteSpace(role))
+            .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            claims.Add(new Claim(ClaimTypes.Role, role));
+        }
+
+        if (!roles.Contains(primaryRole, StringComparer.OrdinalIgnoreCase))
+        {
+            claims.Add(new Claim(ClaimTypes.Role, primaryRole));
+        }
+
         var minutes = int.Parse(jwt["AccessTokenMinutes"]!);
         var expires = DateTime.UtcNow.AddMinutes(minutes);
 

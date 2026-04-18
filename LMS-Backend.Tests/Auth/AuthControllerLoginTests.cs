@@ -265,9 +265,69 @@ public class AuthControllerLoginTests
 
         var jwt = new JwtSecurityTokenHandler().ReadJwtToken(accessToken);
         var roleClaims = jwt.Claims.Where(claim => claim.Type == AppClaimTypes.Role).ToList();
+        var frameworkRoleClaims = jwt.Claims
+            .Where(claim => claim.Type == ClaimTypes.Role)
+            .Select(claim => claim.Value)
+            .ToList();
 
         Assert.Single(roleClaims);
         Assert.Equal(AppRoles.Student, roleClaims[0].Value);
-        Assert.DoesNotContain(jwt.Claims, claim => claim.Type == ClaimTypes.Role);
+        Assert.Single(frameworkRoleClaims);
+        Assert.Equal(AppRoles.Student, frameworkRoleClaims[0]);
+    }
+
+    [Fact]
+    public async Task Login_IncludesAdminAndNormalizedTeacherRoleClaims_ForLegacyAdminUsers()
+    {
+        var controller = CreateController();
+
+        var user = new User
+        {
+            Id = "admin-user-id",
+            Email = "admin@example.com",
+            UserName = "admin@example.com",
+            Status = UserStatus.Active,
+            EmailConfirmed = true
+        };
+
+        _userManagerMock
+            .Setup(m => m.FindByEmailAsync(user.Email!))
+            .ReturnsAsync(user);
+
+        _signInManagerMock
+            .Setup(s => s.CheckPasswordSignInAsync(user, It.IsAny<string>(), true))
+            .ReturnsAsync(Microsoft.AspNetCore.Identity.SignInResult.Success);
+
+        _userManagerMock
+            .Setup(m => m.GetRolesAsync(user))
+            .ReturnsAsync(new List<string> { AppRoles.LegacyAdmin });
+
+        var req = new LoginRequest
+        {
+            Email = user.Email!,
+            Password = "Password123!",
+            DeviceId = "device1"
+        };
+
+        var result = await controller.Login(req);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var body = ok.Value!;
+        var accessToken = (string)body.GetType().GetProperty("accessToken")!.GetValue(body)!;
+        var userPayload = body.GetType().GetProperty("user")!.GetValue(body)!;
+        var role = (string)userPayload.GetType().GetProperty("role")!.GetValue(userPayload)!;
+
+        Assert.Equal(AppRoles.Teacher, role);
+
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(accessToken);
+        var applicationRole = Assert.Single(jwt.Claims.Where(claim => claim.Type == AppClaimTypes.Role));
+        var frameworkRoleClaims = jwt.Claims
+            .Where(claim => claim.Type == ClaimTypes.Role)
+            .Select(claim => claim.Value)
+            .ToList();
+
+        Assert.Equal(AppRoles.Teacher, applicationRole.Value);
+        Assert.Contains(AppRoles.LegacyAdmin, frameworkRoleClaims);
+        Assert.Contains(AppRoles.Teacher, frameworkRoleClaims);
     }
 }

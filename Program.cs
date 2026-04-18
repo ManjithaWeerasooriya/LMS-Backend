@@ -156,6 +156,7 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization(options =>
 {
+    options.AddPolicy(AppPolicies.AdminOnly, policy => policy.RequireRole(AppRoles.LegacyAdmin));
     options.AddPolicy(AppPolicies.TeacherOnly, policy => policy.RequireRole(AppRoles.Teacher));
     options.AddPolicy(AppPolicies.StudentOnly, policy => policy.RequireRole(AppRoles.Student));
 });
@@ -164,6 +165,7 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<IProfileImageService, ProfileImageService>();
 builder.Services.AddScoped<AdminService>();
+builder.Services.AddScoped<AdminDiagnosticsService>();
 builder.Services.AddScoped<TeacherDashboardService>();
 builder.Services.AddScoped<CourseService>();
 builder.Services.AddScoped<ILiveSessionService, LiveSessionService>();
