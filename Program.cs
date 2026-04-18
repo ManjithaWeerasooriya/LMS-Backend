@@ -138,6 +138,7 @@ builder.Services.AddScoped<IProfileImageService, ProfileImageService>();
 builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<TeacherDashboardService>();
 builder.Services.AddScoped<CourseService>();
+builder.Services.AddScoped<ILiveSessionService, LiveSessionService>();
 builder.Services.AddScoped<LiveClassService>();
 builder.Services.AddScoped<StudentDashboardService>();
 builder.Services.AddScoped<IReportingService, ReportingService>();

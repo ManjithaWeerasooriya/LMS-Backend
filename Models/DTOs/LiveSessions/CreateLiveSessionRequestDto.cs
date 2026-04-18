@@ -6,9 +6,6 @@ namespace LMS_Backend.Models.DTOs.LiveSessions;
 public class CreateLiveSessionRequestDto
 {
     [Required]
-    public Guid CourseId { get; set; }
-
-    [Required]
     [MaxLength(200)]
     public string Title { get; set; } = string.Empty;
 
