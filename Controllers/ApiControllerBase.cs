@@ -31,6 +31,7 @@ public abstract class ApiControllerBase : ControllerBase
             NotFoundException => NotFound(ApiResponse<object?>.ErrorResponse(exception.Message)),
             ForbiddenException => StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object?>.ErrorResponse(exception.Message)),
             ConflictException => Conflict(ApiResponse<object?>.ErrorResponse(exception.Message)),
+            ServiceUnavailableException => StatusCode(StatusCodes.Status503ServiceUnavailable, ApiResponse<object?>.ErrorResponse(exception.Message)),
             InvalidOperationException => BadRequest(ApiResponse<object?>.ErrorResponse(exception.Message)),
             ArgumentException => BadRequest(ApiResponse<object?>.ErrorResponse(exception.Message)),
             _ => StatusCode(StatusCodes.Status500InternalServerError, ApiResponse<object?>.ErrorResponse("An unexpected error occurred."))

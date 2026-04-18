@@ -85,6 +85,8 @@ builder.Services.Configure<AzureStorageOptions>(options =>
         : profileImagesContainerName;
 });
 builder.Services.AddScoped<AzureStorageService>();
+builder.Services.Configure<AzureCommunicationOptions>(
+    builder.Configuration.GetSection(AzureCommunicationOptions.SectionName));
 
 // Email
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
@@ -139,6 +141,8 @@ builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<TeacherDashboardService>();
 builder.Services.AddScoped<CourseService>();
 builder.Services.AddScoped<ILiveSessionService, LiveSessionService>();
+builder.Services.AddScoped<IAzureCommunicationIdentityService, AzureCommunicationIdentityService>();
+builder.Services.AddScoped<ILiveSessionJoinService, LiveSessionJoinService>();
 builder.Services.AddScoped<LiveClassService>();
 builder.Services.AddScoped<StudentDashboardService>();
 builder.Services.AddScoped<IReportingService, ReportingService>();

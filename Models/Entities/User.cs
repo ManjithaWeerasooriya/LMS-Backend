@@ -19,6 +19,8 @@ public class User: IdentityUser
     public string? ProfileImageUrl { get; set; }
     [MaxLength(300)]
     public string? ProfileImageBlobName { get; set; }
+    [MaxLength(300)]
+    public string? AcsIdentityId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastLoginAt { get; set; }
 
