@@ -66,6 +66,6 @@ public class Course
     public ICollection<CourseEnrollment> Enrollments { get; set; } = new List<CourseEnrollment>();
     public ICollection<Quiz> Quizzes { get; set; } = new List<Quiz>();
     public ICollection<LiveClass> LiveClasses { get; set; } = new List<LiveClass>();
+    public ICollection<LiveSession> LiveSessions { get; set; } = new List<LiveSession>();
     public ICollection<Assignment> Assignments { get; set; } = new List<Assignment>();
 }
-

@@ -18,6 +18,8 @@ public class ApplicationDBContext : IdentityDbContext<User>
     public DbSet<StudentAnswer> StudentAnswers => Set<StudentAnswer>();
     public DbSet<StudentAnswerOption> StudentAnswerOptions => Set<StudentAnswerOption>();
     public DbSet<LiveClass> LiveClasses => Set<LiveClass>();
+    public DbSet<LiveSession> LiveSessions => Set<LiveSession>();
+    public DbSet<LiveSessionAttendance> LiveSessionAttendances => Set<LiveSessionAttendance>();
     public DbSet<Assignment> Assignments => Set<Assignment>();
     public DbSet<AssignmentSubmission> AssignmentSubmissions => Set<AssignmentSubmission>();
     public DbSet<Material> Materials => Set<Material>();

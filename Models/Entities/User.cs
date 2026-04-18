@@ -22,4 +22,6 @@ public class User: IdentityUser
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastLoginAt { get; set; }
 
+    public ICollection<LiveSession> CreatedLiveSessions { get; set; } = new List<LiveSession>();
+    public ICollection<LiveSessionAttendance> LiveSessionAttendances { get; set; } = new List<LiveSessionAttendance>();
 }
