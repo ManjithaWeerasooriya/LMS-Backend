@@ -229,10 +229,10 @@ if (testConnectionRequested)
     return;
 }
 
-// Apply migrations + seed (TEMP DISABLED TO PREVENT STARTUP CRASH)
+// Apply pending migrations on startup. Identity seeding remains manual.
 try
 {
-    // await ApplyPendingMigrationsAsync(app);
+    await ApplyPendingMigrationsAsync(app);
     // await SeedIdentityAsync(app);
 }
 catch (Exception ex)
