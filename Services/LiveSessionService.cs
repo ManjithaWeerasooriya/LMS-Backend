@@ -11,10 +11,14 @@ public class LiveSessionService : ILiveSessionService
     private static readonly TimeSpan LateThreshold = TimeSpan.FromMinutes(5);
 
     private readonly ApplicationDBContext _context;
+    private readonly IAzureCommunicationLiveSessionService _azureCommunicationLiveSessionService;
 
-    public LiveSessionService(ApplicationDBContext context)
+    public LiveSessionService(
+        ApplicationDBContext context,
+        IAzureCommunicationLiveSessionService azureCommunicationLiveSessionService)
     {
         _context = context;
+        _azureCommunicationLiveSessionService = azureCommunicationLiveSessionService;
     }
 
     public async Task<LiveSessionDto> CreateLiveSessionAsync(
@@ -24,6 +28,18 @@ public class LiveSessionService : ILiveSessionService
         CancellationToken cancellationToken)
     {
         await EnsureTeacherOwnsCourseAsync(teacherId, courseId, cancellationToken);
+
+        var teacher = await GetRequiredUserAsync(teacherId, cancellationToken);
+        var chatThreadId = NormalizeOptional(dto.ChatThreadId);
+
+        if (chatThreadId == null)
+        {
+            chatThreadId = await _azureCommunicationLiveSessionService.CreateChatThreadAsync(
+                teacher,
+                BuildDisplayName(teacher),
+                BuildChatThreadTopic(dto.Title),
+                cancellationToken);
+        }
 
         var session = new LiveSession
         {
@@ -37,7 +53,7 @@ public class LiveSessionService : ILiveSessionService
             PlaybackEnabled = dto.PlaybackEnabled,
             AcsRoomId = NormalizeOptional(dto.AcsRoomId),
             AcsCallLocator = NormalizeOptional(dto.AcsCallLocator),
-            ChatThreadId = NormalizeOptional(dto.ChatThreadId),
+            ChatThreadId = chatThreadId,
             CreatedByTeacherId = teacherId,
             CreatedAt = DateTime.UtcNow
         };
@@ -99,6 +115,12 @@ public class LiveSessionService : ILiveSessionService
 
         if (session.Status == LiveSessionStatus.Live)
         {
+            if (string.IsNullOrWhiteSpace(session.ChatThreadId))
+            {
+                await EnsureSessionHasChatThreadAsync(session, cancellationToken);
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+
             return await GetLiveSessionForResponseAsync(session.Id, cancellationToken);
         }
 
@@ -106,6 +128,8 @@ public class LiveSessionService : ILiveSessionService
         {
             throw new ConflictException("Only scheduled live sessions can be started.");
         }
+
+        await EnsureSessionHasChatThreadAsync(session, cancellationToken);
 
         session.Status = LiveSessionStatus.Live;
         session.UpdatedAt = DateTime.UtcNow;
@@ -134,6 +158,13 @@ public class LiveSessionService : ILiveSessionService
 
         var endedAt = DateTime.UtcNow;
 
+        if (session.RecordingStatus == LiveSessionRecordingStatus.InProgress &&
+            !string.IsNullOrWhiteSpace(session.AcsRecordingId))
+        {
+            await StopRecordingInternalAsync(session, cancellationToken);
+            endedAt = session.RecordingStoppedAt ?? endedAt;
+        }
+
         session.Status = LiveSessionStatus.Ended;
         session.UpdatedAt = endedAt;
 
@@ -149,6 +180,74 @@ public class LiveSessionService : ILiveSessionService
         await _context.SaveChangesAsync(cancellationToken);
 
         return await GetLiveSessionForResponseAsync(session.Id, cancellationToken);
+    }
+
+    public async Task<LiveSessionRecordingDto> StartRecordingAsync(
+        string teacherId,
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetManagedSessionAsync(teacherId, sessionId, cancellationToken);
+
+        if (!session.RecordingEnabled)
+        {
+            throw new ConflictException("Recording is not enabled for this live session.");
+        }
+
+        if (session.Status != LiveSessionStatus.Live)
+        {
+            throw new ConflictException("Recording can only be started while the live session is live.");
+        }
+
+        if (session.RecordingStatus == LiveSessionRecordingStatus.InProgress)
+        {
+            return await GetRecordingForResponseAsync(session.Id, cancellationToken);
+        }
+
+        if (session.RecordingStatus == LiveSessionRecordingStatus.Available &&
+            !string.IsNullOrWhiteSpace(session.AcsRecordingId))
+        {
+            throw new ConflictException("A recording has already been completed for this live session.");
+        }
+
+        var result = await _azureCommunicationLiveSessionService.StartRecordingAsync(
+            session,
+            cancellationToken);
+
+        session.AcsRecordingId = result.AcsRecordingId;
+        session.RecordingStatus = LiveSessionRecordingStatus.InProgress;
+        session.RecordingStartedAt = result.RecordedAt;
+        session.RecordingStoppedAt = null;
+        session.RecordingUrl = BuildRecordingUrl(session.Id);
+        session.UpdatedAt = result.RecordedAt;
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return await GetRecordingForResponseAsync(session.Id, cancellationToken);
+    }
+
+    public async Task<LiveSessionRecordingDto> StopRecordingAsync(
+        string teacherId,
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetManagedSessionAsync(teacherId, sessionId, cancellationToken);
+
+        if (session.RecordingStatus == LiveSessionRecordingStatus.Available)
+        {
+            return await GetRecordingForResponseAsync(session.Id, cancellationToken);
+        }
+
+        if (session.RecordingStatus != LiveSessionRecordingStatus.InProgress ||
+            string.IsNullOrWhiteSpace(session.AcsRecordingId))
+        {
+            throw new ConflictException("No active recording was found for this live session.");
+        }
+
+        await StopRecordingInternalAsync(session, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return await GetRecordingForResponseAsync(session.Id, cancellationToken);
     }
 
     public async Task<IReadOnlyList<LiveSessionDto>> GetTeacherLiveSessionsByCourseAsync(
@@ -189,6 +288,28 @@ public class LiveSessionService : ILiveSessionService
         await EnsureStudentCanAccessSessionAsync(studentId, sessionId, cancellationToken);
 
         return await GetLiveSessionForResponseAsync(sessionId, cancellationToken);
+    }
+
+    public async Task<LiveSessionRecordingDto> GetStudentRecordingAsync(
+        string studentId,
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var session = await GetStudentAccessibleSessionAsync(studentId, sessionId, cancellationToken);
+
+        if (!session.PlaybackEnabled)
+        {
+            throw new ForbiddenException("Playback is not enabled for this live session.");
+        }
+
+        if (session.RecordingStatus != LiveSessionRecordingStatus.Available ||
+            string.IsNullOrWhiteSpace(session.RecordingUrl) ||
+            string.IsNullOrWhiteSpace(session.AcsRecordingId))
+        {
+            throw new NotFoundException("Recording not found for this live session.");
+        }
+
+        return ToLiveSessionRecordingDto(session);
     }
 
     public async Task<LiveSessionAttendanceDto> JoinAttendanceAsync(
@@ -366,6 +487,23 @@ public class LiveSessionService : ILiveSessionService
         return ToLiveSessionDto(session);
     }
 
+    private async Task<LiveSessionRecordingDto> GetRecordingForResponseAsync(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var session = await _context.LiveSessions
+            .AsNoTracking()
+            .Include(s => s.Course)
+            .FirstOrDefaultAsync(s => s.Id == sessionId, cancellationToken);
+
+        if (session == null)
+        {
+            throw new NotFoundException("Live session not found.");
+        }
+
+        return ToLiveSessionRecordingDto(session);
+    }
+
     private async Task EnsureTeacherOwnsCourseAsync(
         string teacherId,
         Guid courseId,
@@ -421,6 +559,7 @@ public class LiveSessionService : ILiveSessionService
     {
         var session = await _context.LiveSessions
             .Include(s => s.Course)
+            .Include(s => s.CreatedByTeacher)
             .FirstOrDefaultAsync(s => s.Id == sessionId, cancellationToken);
 
         if (session == null)
@@ -443,6 +582,7 @@ public class LiveSessionService : ILiveSessionService
     {
         var session = await _context.LiveSessions
             .Include(s => s.Course)
+            .Include(s => s.CreatedByTeacher)
             .FirstOrDefaultAsync(s => s.Id == sessionId, cancellationToken);
 
         if (session == null)
@@ -488,6 +628,55 @@ public class LiveSessionService : ILiveSessionService
         {
             throw new ForbiddenException("You must be enrolled in the course to access this live session.");
         }
+    }
+
+    private async Task<User> GetRequiredUserAsync(
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        var user = await _context.Users
+            .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+
+        if (user == null)
+        {
+            throw new NotFoundException("User not found.");
+        }
+
+        return user;
+    }
+
+    private async Task EnsureSessionHasChatThreadAsync(
+        LiveSession session,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(session.ChatThreadId))
+        {
+            return;
+        }
+
+        var teacher = session.CreatedByTeacher ?? await GetRequiredUserAsync(
+            session.CreatedByTeacherId,
+            cancellationToken);
+
+        session.ChatThreadId = await _azureCommunicationLiveSessionService.CreateChatThreadAsync(
+            teacher,
+            BuildDisplayName(teacher),
+            BuildChatThreadTopic(session.Title),
+            cancellationToken);
+    }
+
+    private async Task StopRecordingInternalAsync(
+        LiveSession session,
+        CancellationToken cancellationToken)
+    {
+        var result = await _azureCommunicationLiveSessionService.StopRecordingAsync(
+            session,
+            cancellationToken);
+
+        session.RecordingStatus = LiveSessionRecordingStatus.Available;
+        session.RecordingStoppedAt = result.RecordedAt;
+        session.RecordingUrl ??= BuildRecordingUrl(session.Id);
+        session.UpdatedAt = result.RecordedAt;
     }
 
     private static void EnsureSessionCanBeJoinedForAttendance(LiveSession session)
@@ -540,13 +729,32 @@ public class LiveSessionService : ILiveSessionService
             AcsRoomId = session.AcsRoomId,
             AcsCallLocator = session.AcsCallLocator,
             ChatThreadId = session.ChatThreadId,
+            AcsRecordingId = session.AcsRecordingId,
+            RecordingStatus = session.RecordingStatus,
+            RecordingUrl = session.RecordingUrl,
+            RecordingStartedAt = session.RecordingStartedAt,
+            RecordingStoppedAt = session.RecordingStoppedAt,
             CreatedByTeacherId = session.CreatedByTeacherId,
-            TeacherName = BuildDisplayName(
-                session.CreatedByTeacher.FirstName,
-                session.CreatedByTeacher.LastName,
-                session.CreatedByTeacher.Email),
+            TeacherName = BuildDisplayName(session.CreatedByTeacher),
             CreatedAt = session.CreatedAt,
             UpdatedAt = session.UpdatedAt
+        };
+    }
+
+    private static LiveSessionRecordingDto ToLiveSessionRecordingDto(LiveSession session)
+    {
+        return new LiveSessionRecordingDto
+        {
+            SessionId = session.Id,
+            CourseId = session.CourseId,
+            CourseTitle = session.Course.Title,
+            SessionTitle = session.Title,
+            PlaybackEnabled = session.PlaybackEnabled,
+            AcsRecordingId = session.AcsRecordingId,
+            RecordingStatus = session.RecordingStatus,
+            RecordingUrl = session.RecordingUrl,
+            RecordingStartedAt = session.RecordingStartedAt,
+            RecordingStoppedAt = session.RecordingStoppedAt
         };
     }
 
@@ -582,6 +790,22 @@ public class LiveSessionService : ILiveSessionService
         return joinTime > session.StartTime.Add(LateThreshold)
             ? AttendanceStatus.Late
             : AttendanceStatus.Present;
+    }
+
+    private static string BuildChatThreadTopic(string title)
+    {
+        return $"Live Session: {NormalizeRequired(title, "Title")}";
+    }
+
+    private static string BuildRecordingUrl(Guid sessionId)
+    {
+        return $"/api/v1/live-sessions/{sessionId}/recording";
+    }
+
+    private static string BuildDisplayName(User user)
+    {
+        return BuildDisplayName(user.FirstName, user.LastName, user.Email)
+            ?? $"User {user.Id}";
     }
 
     private static string? BuildDisplayName(

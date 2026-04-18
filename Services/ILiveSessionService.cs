@@ -31,6 +31,16 @@ public interface ILiveSessionService
         Guid sessionId,
         CancellationToken cancellationToken);
 
+    Task<LiveSessionRecordingDto> StartRecordingAsync(
+        string teacherId,
+        Guid sessionId,
+        CancellationToken cancellationToken);
+
+    Task<LiveSessionRecordingDto> StopRecordingAsync(
+        string teacherId,
+        Guid sessionId,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyList<LiveSessionDto>> GetTeacherLiveSessionsByCourseAsync(
         string teacherId,
         Guid courseId,
@@ -42,6 +52,11 @@ public interface ILiveSessionService
         CancellationToken cancellationToken);
 
     Task<LiveSessionDto> GetStudentLiveSessionByIdAsync(
+        string studentId,
+        Guid sessionId,
+        CancellationToken cancellationToken);
+
+    Task<LiveSessionRecordingDto> GetStudentRecordingAsync(
         string studentId,
         Guid sessionId,
         CancellationToken cancellationToken);

@@ -156,6 +156,58 @@ public class TeacherLiveSessionsController : ApiControllerBase
         }
     }
 
+    [HttpPost("live-sessions/{sessionId:guid}/recording/start")]
+    public async Task<IActionResult> StartRecording(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var teacherId = GetCurrentUserId();
+        if (string.IsNullOrWhiteSpace(teacherId))
+        {
+            return UnauthorizedResponse();
+        }
+
+        try
+        {
+            var recording = await _liveSessionService.StartRecordingAsync(
+                teacherId,
+                sessionId,
+                cancellationToken);
+
+            return Success(recording, "Live session recording started successfully.");
+        }
+        catch (Exception ex)
+        {
+            return HandleException(ex);
+        }
+    }
+
+    [HttpPost("live-sessions/{sessionId:guid}/recording/stop")]
+    public async Task<IActionResult> StopRecording(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var teacherId = GetCurrentUserId();
+        if (string.IsNullOrWhiteSpace(teacherId))
+        {
+            return UnauthorizedResponse();
+        }
+
+        try
+        {
+            var recording = await _liveSessionService.StopRecordingAsync(
+                teacherId,
+                sessionId,
+                cancellationToken);
+
+            return Success(recording, "Live session recording stopped successfully.");
+        }
+        catch (Exception ex)
+        {
+            return HandleException(ex);
+        }
+    }
+
     [HttpGet("courses/{courseId:guid}/live-sessions")]
     public async Task<IActionResult> GetLiveSessionsByCourse(
         Guid courseId,

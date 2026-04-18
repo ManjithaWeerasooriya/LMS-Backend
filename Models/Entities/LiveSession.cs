@@ -41,6 +41,18 @@ public class LiveSession
     [MaxLength(200)]
     public string? ChatThreadId { get; set; }
 
+    [MaxLength(300)]
+    public string? AcsRecordingId { get; set; }
+
+    public LiveSessionRecordingStatus RecordingStatus { get; set; } = LiveSessionRecordingStatus.NotStarted;
+
+    [MaxLength(1000)]
+    public string? RecordingUrl { get; set; }
+
+    public DateTime? RecordingStartedAt { get; set; }
+
+    public DateTime? RecordingStoppedAt { get; set; }
+
     [Required]
     public string CreatedByTeacherId { get; set; } = default!;
 

@@ -25,6 +25,12 @@ public class LiveSessionConfiguration : IEntityTypeConfiguration<LiveSession>
         builder.Property(s => s.ChatThreadId)
             .HasMaxLength(200);
 
+        builder.Property(s => s.AcsRecordingId)
+            .HasMaxLength(300);
+
+        builder.Property(s => s.RecordingUrl)
+            .HasMaxLength(1000);
+
         builder.HasIndex(s => new { s.CourseId, s.StartTime });
         builder.HasIndex(s => new { s.CreatedByTeacherId, s.StartTime });
 

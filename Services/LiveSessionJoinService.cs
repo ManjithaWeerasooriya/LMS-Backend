@@ -10,13 +10,16 @@ public class LiveSessionJoinService : ILiveSessionJoinService
 {
     private readonly ApplicationDBContext _context;
     private readonly IAzureCommunicationIdentityService _azureCommunicationIdentityService;
+    private readonly IAzureCommunicationLiveSessionService _azureCommunicationLiveSessionService;
 
     public LiveSessionJoinService(
         ApplicationDBContext context,
-        IAzureCommunicationIdentityService azureCommunicationIdentityService)
+        IAzureCommunicationIdentityService azureCommunicationIdentityService,
+        IAzureCommunicationLiveSessionService azureCommunicationLiveSessionService)
     {
         _context = context;
         _azureCommunicationIdentityService = azureCommunicationIdentityService;
+        _azureCommunicationLiveSessionService = azureCommunicationLiveSessionService;
     }
 
     public async Task<LiveSessionJoinTokenResponseDto> CreateJoinTokenAsync(
@@ -60,6 +63,17 @@ public class LiveSessionJoinService : ILiveSessionJoinService
             BuildDisplayName(user),
             limitToJoinOnly: ShouldLimitToJoinOnly(session),
             cancellationToken);
+
+        if (!string.IsNullOrWhiteSpace(session.ChatThreadId))
+        {
+            await _azureCommunicationLiveSessionService.EnsureChatParticipantAsync(
+                session.CreatedByTeacher,
+                BuildDisplayName(session.CreatedByTeacher),
+                session.ChatThreadId,
+                user,
+                tokenResult.DisplayName,
+                cancellationToken);
+        }
 
         return new LiveSessionJoinTokenResponseDto
         {

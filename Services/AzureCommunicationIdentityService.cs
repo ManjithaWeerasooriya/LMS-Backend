@@ -23,6 +23,11 @@ public class AzureCommunicationIdentityService : IAzureCommunicationIdentityServ
         CommunicationTokenScope.VoIPJoin
     };
 
+    private static readonly CommunicationTokenScope[] ChatAccessScopes =
+    {
+        CommunicationTokenScope.Chat
+    };
+
     private static readonly object ClientLock = new();
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> UserIdentityLocks = new();
     private static CommunicationIdentityClient? SharedClient;
@@ -53,6 +58,59 @@ public class AzureCommunicationIdentityService : IAzureCommunicationIdentityServ
             var tokenResponse = await client.GetTokenAsync(
                 acsUser,
                 limitToJoinOnly ? RestrictedJoinScopes : DefaultJoinScopes,
+                tokenLifetime,
+                cancellationToken);
+
+            return new AcsIdentityTokenResult
+            {
+                AcsUserId = acsUser.Id,
+                Token = tokenResponse.Value.Token,
+                DisplayName = displayName,
+                Endpoint = _options.Endpoint
+            };
+        }
+        catch (RequestFailedException ex)
+        {
+            throw new ServiceUnavailableException("Azure Communication Services is unavailable.", ex);
+        }
+    }
+
+    public async Task<string> EnsureAcsIdentityAsync(
+        User user,
+        CancellationToken cancellationToken)
+    {
+        ValidateConfiguration();
+
+        try
+        {
+            var acsUser = await GetOrCreateAcsUserAsync(
+                GetRequiredClient(),
+                user,
+                cancellationToken);
+
+            return acsUser.Id;
+        }
+        catch (RequestFailedException ex)
+        {
+            throw new ServiceUnavailableException("Azure Communication Services is unavailable.", ex);
+        }
+    }
+
+    public async Task<AcsIdentityTokenResult> CreateChatAccessTokenAsync(
+        User user,
+        string displayName,
+        CancellationToken cancellationToken)
+    {
+        ValidateConfiguration();
+
+        try
+        {
+            var client = GetRequiredClient();
+            var acsUser = await GetOrCreateAcsUserAsync(client, user, cancellationToken);
+            var tokenLifetime = TimeSpan.FromHours(_options.AccessTokenLifetimeHours);
+            var tokenResponse = await client.GetTokenAsync(
+                acsUser,
+                ChatAccessScopes,
                 tokenLifetime,
                 cancellationToken);
 

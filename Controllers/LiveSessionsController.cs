@@ -100,4 +100,31 @@ public class LiveSessionsController : ApiControllerBase
             return HandleException(ex);
         }
     }
+
+    [HttpGet("{sessionId:guid}/recording")]
+    [Authorize(Policy = AppPolicies.StudentOnly)]
+    public async Task<IActionResult> GetRecording(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var studentId = GetCurrentUserId();
+        if (string.IsNullOrWhiteSpace(studentId))
+        {
+            return UnauthorizedResponse();
+        }
+
+        try
+        {
+            var recording = await _liveSessionService.GetStudentRecordingAsync(
+                studentId,
+                sessionId,
+                cancellationToken);
+
+            return Success(recording, "Live session recording retrieved successfully.");
+        }
+        catch (Exception ex)
+        {
+            return HandleException(ex);
+        }
+    }
 }

@@ -16,3 +16,11 @@ public enum AttendanceStatus
     LeftEarly = 4,
     Absent = 5
 }
+
+public enum LiveSessionRecordingStatus
+{
+    NotStarted = 1,
+    InProgress = 2,
+    Available = 3,
+    Failed = 4
+}

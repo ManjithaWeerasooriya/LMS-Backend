@@ -17,6 +17,11 @@ public class LiveSessionDto
     public string? AcsRoomId { get; set; }
     public string? AcsCallLocator { get; set; }
     public string? ChatThreadId { get; set; }
+    public string? AcsRecordingId { get; set; }
+    public LiveSessionRecordingStatus RecordingStatus { get; set; }
+    public string? RecordingUrl { get; set; }
+    public DateTime? RecordingStartedAt { get; set; }
+    public DateTime? RecordingStoppedAt { get; set; }
     public string CreatedByTeacherId { get; set; } = string.Empty;
     public string? TeacherName { get; set; }
     public DateTime CreatedAt { get; set; }
