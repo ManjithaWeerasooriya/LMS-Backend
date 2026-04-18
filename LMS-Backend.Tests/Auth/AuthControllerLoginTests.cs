@@ -277,15 +277,15 @@ public class AuthControllerLoginTests
     }
 
     [Fact]
-    public async Task Login_IncludesAdminAndNormalizedTeacherRoleClaims_ForLegacyAdminUsers()
+    public async Task Login_IncludesTeacherRoleClaims_ForTeacherUsers()
     {
         var controller = CreateController();
 
         var user = new User
         {
-            Id = "admin-user-id",
-            Email = "admin@example.com",
-            UserName = "admin@example.com",
+            Id = "teacher-user-id",
+            Email = "teacher@example.com",
+            UserName = "teacher@example.com",
             Status = UserStatus.Active,
             EmailConfirmed = true
         };
@@ -300,7 +300,7 @@ public class AuthControllerLoginTests
 
         _userManagerMock
             .Setup(m => m.GetRolesAsync(user))
-            .ReturnsAsync(new List<string> { AppRoles.LegacyAdmin });
+            .ReturnsAsync(new List<string> { AppRoles.Teacher });
 
         var req = new LoginRequest
         {
@@ -320,14 +320,14 @@ public class AuthControllerLoginTests
         Assert.Equal(AppRoles.Teacher, role);
 
         var jwt = new JwtSecurityTokenHandler().ReadJwtToken(accessToken);
-        var applicationRole = Assert.Single(jwt.Claims.Where(claim => claim.Type == AppClaimTypes.Role));
+        var applicationRole = Assert.Single(jwt.Claims, claim => claim.Type == AppClaimTypes.Role);
         var frameworkRoleClaims = jwt.Claims
             .Where(claim => claim.Type == ClaimTypes.Role)
             .Select(claim => claim.Value)
             .ToList();
 
         Assert.Equal(AppRoles.Teacher, applicationRole.Value);
-        Assert.Contains(AppRoles.LegacyAdmin, frameworkRoleClaims);
         Assert.Contains(AppRoles.Teacher, frameworkRoleClaims);
+        Assert.Single(frameworkRoleClaims);
     }
 }

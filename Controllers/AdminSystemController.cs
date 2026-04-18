@@ -8,7 +8,7 @@ namespace LMS_Backend.Controllers;
 
 [ApiController]
 [Route("api/v1/admin/system")]
-[Authorize(Policy = AppPolicies.AdminOnly)]
+[Authorize(Policy = AppPolicies.TeacherOnly)]
 public class AdminSystemController : ControllerBase
 {
     private readonly AdminDiagnosticsService _adminDiagnosticsService;

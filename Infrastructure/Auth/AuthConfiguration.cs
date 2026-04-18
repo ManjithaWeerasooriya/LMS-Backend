@@ -41,7 +41,6 @@ public static class AppRoles
 
 public static class AppPolicies
 {
-    public const string AdminOnly = nameof(AdminOnly);
     public const string TeacherOnly = nameof(TeacherOnly);
     public const string StudentOnly = nameof(StudentOnly);
 }
