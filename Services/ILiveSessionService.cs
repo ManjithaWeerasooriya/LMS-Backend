@@ -21,6 +21,16 @@ public interface ILiveSessionService
         Guid sessionId,
         CancellationToken cancellationToken);
 
+    Task<LiveSessionDto> StartLiveSessionAsync(
+        string teacherId,
+        Guid sessionId,
+        CancellationToken cancellationToken);
+
+    Task<LiveSessionDto> EndLiveSessionAsync(
+        string teacherId,
+        Guid sessionId,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyList<LiveSessionDto>> GetTeacherLiveSessionsByCourseAsync(
         string teacherId,
         Guid courseId,
@@ -33,6 +43,21 @@ public interface ILiveSessionService
 
     Task<LiveSessionDto> GetStudentLiveSessionByIdAsync(
         string studentId,
+        Guid sessionId,
+        CancellationToken cancellationToken);
+
+    Task<LiveSessionAttendanceDto> JoinAttendanceAsync(
+        string studentId,
+        Guid sessionId,
+        CancellationToken cancellationToken);
+
+    Task<LiveSessionAttendanceDto> LeaveAttendanceAsync(
+        string studentId,
+        Guid sessionId,
+        CancellationToken cancellationToken);
+
+    Task<LiveSessionAttendanceSummaryDto> GetLiveSessionAttendanceSummaryAsync(
+        string teacherId,
         Guid sessionId,
         CancellationToken cancellationToken);
 }

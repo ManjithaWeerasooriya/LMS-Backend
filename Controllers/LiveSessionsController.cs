@@ -10,10 +10,14 @@ namespace LMS_Backend.Controllers;
 [Authorize(Roles = AppRoles.Teacher + "," + AppRoles.Student)]
 public class LiveSessionsController : ApiControllerBase
 {
+    private readonly ILiveSessionService _liveSessionService;
     private readonly ILiveSessionJoinService _liveSessionJoinService;
 
-    public LiveSessionsController(ILiveSessionJoinService liveSessionJoinService)
+    public LiveSessionsController(
+        ILiveSessionService liveSessionService,
+        ILiveSessionJoinService liveSessionJoinService)
     {
+        _liveSessionService = liveSessionService;
         _liveSessionJoinService = liveSessionJoinService;
     }
 
@@ -36,6 +40,60 @@ public class LiveSessionsController : ApiControllerBase
                 cancellationToken);
 
             return Success(response, "Live session join token generated successfully.");
+        }
+        catch (Exception ex)
+        {
+            return HandleException(ex);
+        }
+    }
+
+    [HttpPost("{sessionId:guid}/attendance/join")]
+    [Authorize(Policy = AppPolicies.StudentOnly)]
+    public async Task<IActionResult> JoinAttendance(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var studentId = GetCurrentUserId();
+        if (string.IsNullOrWhiteSpace(studentId))
+        {
+            return UnauthorizedResponse();
+        }
+
+        try
+        {
+            var attendance = await _liveSessionService.JoinAttendanceAsync(
+                studentId,
+                sessionId,
+                cancellationToken);
+
+            return Success(attendance, "Live session attendance joined successfully.");
+        }
+        catch (Exception ex)
+        {
+            return HandleException(ex);
+        }
+    }
+
+    [HttpPost("{sessionId:guid}/attendance/leave")]
+    [Authorize(Policy = AppPolicies.StudentOnly)]
+    public async Task<IActionResult> LeaveAttendance(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var studentId = GetCurrentUserId();
+        if (string.IsNullOrWhiteSpace(studentId))
+        {
+            return UnauthorizedResponse();
+        }
+
+        try
+        {
+            var attendance = await _liveSessionService.LeaveAttendanceAsync(
+                studentId,
+                sessionId,
+                cancellationToken);
+
+            return Success(attendance, "Live session attendance left successfully.");
         }
         catch (Exception ex)
         {

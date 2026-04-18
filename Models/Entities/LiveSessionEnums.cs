@@ -3,8 +3,8 @@ namespace LMS_Backend.Models.Entities;
 public enum LiveSessionStatus
 {
     Scheduled = 1,
-    Active = 2,
-    Completed = 3,
+    Live = 2,
+    Ended = 3,
     Cancelled = 4
 }
 

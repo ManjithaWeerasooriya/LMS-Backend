@@ -104,6 +104,58 @@ public class TeacherLiveSessionsController : ApiControllerBase
         }
     }
 
+    [HttpPost("live-sessions/{sessionId:guid}/start")]
+    public async Task<IActionResult> StartLiveSession(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var teacherId = GetCurrentUserId();
+        if (string.IsNullOrWhiteSpace(teacherId))
+        {
+            return UnauthorizedResponse();
+        }
+
+        try
+        {
+            var session = await _liveSessionService.StartLiveSessionAsync(
+                teacherId,
+                sessionId,
+                cancellationToken);
+
+            return Success(session, "Live session started successfully.");
+        }
+        catch (Exception ex)
+        {
+            return HandleException(ex);
+        }
+    }
+
+    [HttpPost("live-sessions/{sessionId:guid}/end")]
+    public async Task<IActionResult> EndLiveSession(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var teacherId = GetCurrentUserId();
+        if (string.IsNullOrWhiteSpace(teacherId))
+        {
+            return UnauthorizedResponse();
+        }
+
+        try
+        {
+            var session = await _liveSessionService.EndLiveSessionAsync(
+                teacherId,
+                sessionId,
+                cancellationToken);
+
+            return Success(session, "Live session ended successfully.");
+        }
+        catch (Exception ex)
+        {
+            return HandleException(ex);
+        }
+    }
+
     [HttpGet("courses/{courseId:guid}/live-sessions")]
     public async Task<IActionResult> GetLiveSessionsByCourse(
         Guid courseId,
@@ -123,6 +175,32 @@ public class TeacherLiveSessionsController : ApiControllerBase
                 cancellationToken);
 
             return Success(sessions, "Live sessions retrieved successfully.");
+        }
+        catch (Exception ex)
+        {
+            return HandleException(ex);
+        }
+    }
+
+    [HttpGet("live-sessions/{sessionId:guid}/attendance")]
+    public async Task<IActionResult> GetLiveSessionAttendance(
+        Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        var teacherId = GetCurrentUserId();
+        if (string.IsNullOrWhiteSpace(teacherId))
+        {
+            return UnauthorizedResponse();
+        }
+
+        try
+        {
+            var summary = await _liveSessionService.GetLiveSessionAttendanceSummaryAsync(
+                teacherId,
+                sessionId,
+                cancellationToken);
+
+            return Success(summary, "Live session attendance retrieved successfully.");
         }
         catch (Exception ex)
         {

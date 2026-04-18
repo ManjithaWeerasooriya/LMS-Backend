@@ -90,7 +90,7 @@ public class LiveSessionJoinService : ILiveSessionJoinService
             throw new ConflictException("This live session has been cancelled.");
         }
 
-        if (session.Status == LiveSessionStatus.Completed)
+        if (session.Status == LiveSessionStatus.Ended)
         {
             throw new ConflictException("This live session has already ended.");
         }
