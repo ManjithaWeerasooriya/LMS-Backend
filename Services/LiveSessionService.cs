@@ -31,6 +31,13 @@ public class LiveSessionService : ILiveSessionService
 
         var teacher = await GetRequiredUserAsync(teacherId, cancellationToken);
         var chatThreadId = NormalizeOptional(dto.ChatThreadId);
+        var meetingDetails = LiveSessionMeetingContract.ValidateAndNormalize(
+            dto.MeetingType,
+            dto.RoomId,
+            dto.GroupId,
+            dto.MeetingLink,
+            dto.MeetingId,
+            dto.Passcode);
 
         if (chatThreadId == null)
         {
@@ -51,12 +58,11 @@ public class LiveSessionService : ILiveSessionService
             Status = LiveSessionStatus.Scheduled,
             RecordingEnabled = dto.RecordingEnabled,
             PlaybackEnabled = dto.PlaybackEnabled,
-            AcsRoomId = NormalizeOptional(dto.AcsRoomId),
-            AcsCallLocator = NormalizeOptional(dto.AcsCallLocator),
             ChatThreadId = chatThreadId,
             CreatedByTeacherId = teacherId,
             CreatedAt = DateTime.UtcNow
         };
+        LiveSessionMeetingContract.ApplyToSession(session, meetingDetails);
 
         _context.LiveSessions.Add(session);
         await _context.SaveChangesAsync(cancellationToken);
@@ -71,6 +77,13 @@ public class LiveSessionService : ILiveSessionService
         CancellationToken cancellationToken)
     {
         var session = await GetManagedSessionAsync(teacherId, sessionId, cancellationToken);
+        var meetingDetails = LiveSessionMeetingContract.ValidateAndNormalize(
+            dto.MeetingType,
+            dto.RoomId,
+            dto.GroupId,
+            dto.MeetingLink,
+            dto.MeetingId,
+            dto.Passcode);
 
         session.Title = NormalizeRequired(dto.Title, "Title");
         session.Description = NormalizeOptional(dto.Description);
@@ -78,10 +91,9 @@ public class LiveSessionService : ILiveSessionService
         session.DurationMinutes = dto.DurationMinutes;
         session.RecordingEnabled = dto.RecordingEnabled;
         session.PlaybackEnabled = dto.PlaybackEnabled;
-        session.AcsRoomId = NormalizeOptional(dto.AcsRoomId);
-        session.AcsCallLocator = NormalizeOptional(dto.AcsCallLocator);
         session.ChatThreadId = NormalizeOptional(dto.ChatThreadId);
         session.UpdatedAt = DateTime.UtcNow;
+        LiveSessionMeetingContract.ApplyToSession(session, meetingDetails);
 
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -726,8 +738,12 @@ public class LiveSessionService : ILiveSessionService
             Status = session.Status,
             RecordingEnabled = session.RecordingEnabled,
             PlaybackEnabled = session.PlaybackEnabled,
-            AcsRoomId = session.AcsRoomId,
-            AcsCallLocator = session.AcsCallLocator,
+            MeetingType = session.MeetingType,
+            RoomId = session.RoomId,
+            GroupId = session.GroupId,
+            MeetingLink = session.MeetingLink,
+            MeetingId = session.MeetingId,
+            Passcode = session.Passcode,
             ChatThreadId = session.ChatThreadId,
             AcsRecordingId = session.AcsRecordingId,
             RecordingStatus = session.RecordingStatus,

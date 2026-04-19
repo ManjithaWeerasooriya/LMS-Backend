@@ -1,5 +1,12 @@
 namespace LMS_Backend.Models.Entities;
 
+public enum MeetingType
+{
+    Room = 1,
+    Group = 2,
+    Teams = 3
+}
+
 public enum LiveSessionStatus
 {
     Scheduled = 1,

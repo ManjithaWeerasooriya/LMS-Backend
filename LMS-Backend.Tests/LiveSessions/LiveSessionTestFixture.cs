@@ -118,8 +118,12 @@ internal sealed class LiveSessionTestFixture : IAsyncDisposable
         DateTime? startTime = null,
         bool recordingEnabled = false,
         bool playbackEnabled = false,
-        string? acsRoomId = "room-123",
-        string? acsCallLocator = null,
+        MeetingType meetingType = MeetingType.Room,
+        string? roomId = "room-123",
+        string? groupId = null,
+        string? meetingLink = null,
+        string? meetingId = null,
+        string? passcode = null,
         string? chatThreadId = null)
     {
         return new CreateLiveSessionRequestDto
@@ -130,8 +134,12 @@ internal sealed class LiveSessionTestFixture : IAsyncDisposable
             DurationMinutes = 60,
             RecordingEnabled = recordingEnabled,
             PlaybackEnabled = playbackEnabled,
-            AcsRoomId = acsRoomId,
-            AcsCallLocator = acsCallLocator,
+            MeetingType = meetingType,
+            RoomId = roomId,
+            GroupId = groupId,
+            MeetingLink = meetingLink,
+            MeetingId = meetingId,
+            Passcode = passcode,
             ChatThreadId = chatThreadId
         };
     }
@@ -141,8 +149,12 @@ internal sealed class LiveSessionTestFixture : IAsyncDisposable
         DateTime? startTime = null,
         bool recordingEnabled = false,
         bool playbackEnabled = false,
-        string? acsRoomId = "room-456",
-        string? acsCallLocator = null,
+        MeetingType meetingType = MeetingType.Room,
+        string? roomId = "room-456",
+        string? groupId = null,
+        string? meetingLink = null,
+        string? meetingId = null,
+        string? passcode = null,
         string? chatThreadId = "chat-thread-updated")
     {
         return new UpdateLiveSessionRequestDto
@@ -153,8 +165,12 @@ internal sealed class LiveSessionTestFixture : IAsyncDisposable
             DurationMinutes = 90,
             RecordingEnabled = recordingEnabled,
             PlaybackEnabled = playbackEnabled,
-            AcsRoomId = acsRoomId,
-            AcsCallLocator = acsCallLocator,
+            MeetingType = meetingType,
+            RoomId = roomId,
+            GroupId = groupId,
+            MeetingLink = meetingLink,
+            MeetingId = meetingId,
+            Passcode = passcode,
             ChatThreadId = chatThreadId
         };
     }
@@ -166,8 +182,12 @@ internal sealed class LiveSessionTestFixture : IAsyncDisposable
         bool recordingEnabled = false,
         bool playbackEnabled = false,
         LiveSessionRecordingStatus recordingStatus = LiveSessionRecordingStatus.NotStarted,
-        string? acsRoomId = "room-123",
-        string? acsCallLocator = null,
+        MeetingType meetingType = MeetingType.Room,
+        string? roomId = "room-123",
+        string? groupId = null,
+        string? meetingLink = null,
+        string? meetingId = null,
+        string? passcode = null,
         string? chatThreadId = "chat-thread-123",
         string? recordingUrl = null,
         string? acsRecordingId = null,
@@ -189,8 +209,12 @@ internal sealed class LiveSessionTestFixture : IAsyncDisposable
             RecordingEnabled = recordingEnabled,
             PlaybackEnabled = playbackEnabled,
             RecordingStatus = recordingStatus,
-            AcsRoomId = acsRoomId,
-            AcsCallLocator = acsCallLocator,
+            MeetingType = meetingType,
+            RoomId = roomId,
+            GroupId = groupId,
+            MeetingLink = meetingLink,
+            MeetingId = meetingId,
+            Passcode = passcode,
             ChatThreadId = chatThreadId,
             RecordingUrl = recordingUrl,
             AcsRecordingId = acsRecordingId,

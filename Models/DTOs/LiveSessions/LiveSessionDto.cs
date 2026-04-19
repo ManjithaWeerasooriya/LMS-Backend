@@ -14,8 +14,12 @@ public class LiveSessionDto
     public LiveSessionStatus Status { get; set; }
     public bool RecordingEnabled { get; set; }
     public bool PlaybackEnabled { get; set; }
-    public string? AcsRoomId { get; set; }
-    public string? AcsCallLocator { get; set; }
+    public MeetingType MeetingType { get; set; }
+    public string? RoomId { get; set; }
+    public string? GroupId { get; set; }
+    public string? MeetingLink { get; set; }
+    public string? MeetingId { get; set; }
+    public string? Passcode { get; set; }
     public string? ChatThreadId { get; set; }
     public string? AcsRecordingId { get; set; }
     public LiveSessionRecordingStatus RecordingStatus { get; set; }

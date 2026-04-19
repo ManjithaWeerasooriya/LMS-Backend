@@ -38,7 +38,7 @@ public class LiveSessionJoinService : ILiveSessionJoinService
             throw new NotFoundException("Live session not found.");
         }
 
-        EnsureSessionCanBeJoined(session);
+        var meetingDetails = EnsureSessionCanBeJoined(session);
 
         var user = await _context.Users
             .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
@@ -81,8 +81,12 @@ public class LiveSessionJoinService : ILiveSessionJoinService
             Token = tokenResult.Token,
             DisplayName = tokenResult.DisplayName,
             AcsEndpoint = tokenResult.Endpoint,
-            AcsRoomId = session.AcsRoomId,
-            AcsCallLocator = session.AcsCallLocator,
+            MeetingType = meetingDetails.MeetingType,
+            RoomId = meetingDetails.RoomId,
+            GroupId = meetingDetails.GroupId,
+            MeetingLink = meetingDetails.MeetingLink,
+            MeetingId = meetingDetails.MeetingId,
+            Passcode = meetingDetails.Passcode,
             ChatThreadId = session.ChatThreadId,
             Session = new LiveSessionJoinMetadataDto
             {
@@ -97,7 +101,7 @@ public class LiveSessionJoinService : ILiveSessionJoinService
         };
     }
 
-    private static void EnsureSessionCanBeJoined(LiveSession session)
+    private static LiveSessionMeetingDetails EnsureSessionCanBeJoined(LiveSession session)
     {
         if (session.Status == LiveSessionStatus.Cancelled)
         {
@@ -109,16 +113,19 @@ public class LiveSessionJoinService : ILiveSessionJoinService
             throw new ConflictException("This live session has already ended.");
         }
 
-        if (string.IsNullOrWhiteSpace(session.AcsRoomId) &&
-            string.IsNullOrWhiteSpace(session.AcsCallLocator))
+        try
         {
-            throw new ConflictException("This live session is not configured for ACS joining.");
+            return LiveSessionMeetingContract.ValidateAndNormalize(session);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new ConflictException($"This live session is not configured for joining: {ex.Message}");
         }
     }
 
     private static bool ShouldLimitToJoinOnly(LiveSession session)
     {
-        return !string.IsNullOrWhiteSpace(session.AcsRoomId);
+        return session.MeetingType == MeetingType.Room;
     }
 
     private static string BuildDisplayName(User user)

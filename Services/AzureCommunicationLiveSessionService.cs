@@ -194,42 +194,15 @@ public class AzureCommunicationLiveSessionService : IAzureCommunicationLiveSessi
 
     private static StartRecordingOptions ResolveRecordingOptions(LiveSession session)
     {
-        if (!string.IsNullOrWhiteSpace(session.AcsCallLocator))
+        var meetingDetails = LiveSessionMeetingContract.ValidateAndNormalize(session);
+
+        return meetingDetails.MeetingType switch
         {
-            var normalized = session.AcsCallLocator.Trim();
-
-            if (normalized.StartsWith("connection:", StringComparison.OrdinalIgnoreCase))
-            {
-                return new StartRecordingOptions(normalized["connection:".Length..].Trim());
-            }
-
-            if (normalized.StartsWith("server:", StringComparison.OrdinalIgnoreCase))
-            {
-                return new StartRecordingOptions(
-                    new ServerCallLocator(normalized["server:".Length..].Trim()));
-            }
-
-            if (normalized.StartsWith("group:", StringComparison.OrdinalIgnoreCase))
-            {
-                return new StartRecordingOptions(
-                    new GroupCallLocator(normalized["group:".Length..].Trim()));
-            }
-
-            if (normalized.StartsWith("room:", StringComparison.OrdinalIgnoreCase))
-            {
-                return new StartRecordingOptions(
-                    new RoomCallLocator(normalized["room:".Length..].Trim()));
-            }
-
-            return new StartRecordingOptions(new ServerCallLocator(normalized));
-        }
-
-        if (!string.IsNullOrWhiteSpace(session.AcsRoomId))
-        {
-            return new StartRecordingOptions(new RoomCallLocator(session.AcsRoomId.Trim()));
-        }
-
-        throw new ConflictException("This live session is not configured for ACS recording.");
+            MeetingType.Room => new StartRecordingOptions(new RoomCallLocator(meetingDetails.RoomId!)),
+            MeetingType.Group => new StartRecordingOptions(new GroupCallLocator(meetingDetails.GroupId!)),
+            MeetingType.Teams => throw new ConflictException("Teams live sessions are not configured for ACS recording."),
+            _ => throw new ConflictException("This live session is not configured for ACS recording.")
+        };
     }
 
     private CallRecording GetCallRecordingClient()
