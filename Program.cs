@@ -167,6 +167,7 @@ builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<AdminDiagnosticsService>();
 builder.Services.AddScoped<TeacherDashboardService>();
 builder.Services.AddScoped<CourseService>();
+builder.Services.AddScoped<IMaterialService, MaterialService>();
 builder.Services.AddScoped<ILiveSessionService, LiveSessionService>();
 builder.Services.AddScoped<IAzureCommunicationIdentityService, AzureCommunicationIdentityService>();
 builder.Services.AddScoped<IAzureCommunicationLiveSessionService, AzureCommunicationLiveSessionService>();
