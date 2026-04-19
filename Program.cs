@@ -171,7 +171,6 @@ builder.Services.AddScoped<ILiveSessionService, LiveSessionService>();
 builder.Services.AddScoped<IAzureCommunicationIdentityService, AzureCommunicationIdentityService>();
 builder.Services.AddScoped<IAzureCommunicationLiveSessionService, AzureCommunicationLiveSessionService>();
 builder.Services.AddScoped<ILiveSessionJoinService, LiveSessionJoinService>();
-builder.Services.AddScoped<LiveClassService>();
 builder.Services.AddScoped<StudentDashboardService>();
 builder.Services.AddScoped<IReportingService, ReportingService>();
 builder.Services.AddScoped<IdentitySeeder>();

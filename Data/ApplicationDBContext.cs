@@ -17,7 +17,6 @@ public class ApplicationDBContext : IdentityDbContext<User>
     public DbSet<QuizAttempt> QuizAttempts => Set<QuizAttempt>();
     public DbSet<StudentAnswer> StudentAnswers => Set<StudentAnswer>();
     public DbSet<StudentAnswerOption> StudentAnswerOptions => Set<StudentAnswerOption>();
-    public DbSet<LiveClass> LiveClasses => Set<LiveClass>();
     public DbSet<LiveSession> LiveSessions => Set<LiveSession>();
     public DbSet<LiveSessionAttendance> LiveSessionAttendances => Set<LiveSessionAttendance>();
     public DbSet<Assignment> Assignments => Set<Assignment>();
@@ -56,18 +55,6 @@ public class ApplicationDBContext : IdentityDbContext<User>
             .WithMany()
             .HasForeignKey(e => e.StudentId)
             .OnDelete(DeleteBehavior.Restrict);
-
-        builder.Entity<LiveClass>()
-            .HasOne(l => l.Teacher)
-            .WithMany()
-            .HasForeignKey(l => l.TeacherId)
-            .OnDelete(DeleteBehavior.Restrict);
-
-        builder.Entity<LiveClass>()
-            .HasOne(l => l.Course)
-            .WithMany(c => c.LiveClasses)
-            .HasForeignKey(l => l.CourseId)
-            .OnDelete(DeleteBehavior.SetNull);
 
         builder.Entity<Assignment>()
             .HasOne(a => a.Course)

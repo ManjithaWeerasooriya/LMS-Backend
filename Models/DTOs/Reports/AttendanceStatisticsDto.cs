@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using LMS_Backend.Models.Entities;
 
 namespace LMS_Backend.Models.DTOs.Reports;
 
@@ -15,10 +16,10 @@ public class AttendanceStatisticsDto
 
 public class LiveSessionSummaryDto
 {
-    public Guid LiveClassId { get; set; }
-    public string Topic { get; set; } = string.Empty;
-    public DateTime ScheduledAt { get; set; }
+    public Guid LiveSessionId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public DateTime StartTime { get; set; }
     public string? CourseTitle { get; set; }
     public int StudentsEnrolled { get; set; }
-    public string? MeetingLink { get; set; }
+    public LiveSessionStatus Status { get; set; }
 }

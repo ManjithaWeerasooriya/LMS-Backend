@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using LMS_Backend.Models.Entities;
 
 namespace LMS_Backend.Models.DTOs.LiveSessions;
 
@@ -17,8 +16,6 @@ public class UpdateLiveSessionRequestDto
 
     [Range(1, 1440)]
     public int DurationMinutes { get; set; }
-
-    public LiveSessionStatus Status { get; set; } = LiveSessionStatus.Scheduled;
 
     public bool RecordingEnabled { get; set; }
 
