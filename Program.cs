@@ -5,13 +5,16 @@ using System.Reflection;
 using System.Text;
 using LMS_Backend.Data;
 using LMS_Backend.Infrastructure.Auth;
+using LMS_Backend.Infrastructure.HealthChecks;
 using LMS_Backend.Infrastructure.Seed;
 using LMS_Backend.Models.Entities;
 using LMS_Backend.Services;
 using LMS_Backend.Services.Reporting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
@@ -26,6 +29,7 @@ var builder = WebApplication.CreateBuilder(filteredArgs);
 
 builder.Services.AddControllers();
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient();
 builder.Services.AddScoped<IPublicService, PublicService>();
 builder.Services.AddScoped<IQuizService, QuizService>();
 
@@ -85,6 +89,30 @@ builder.Services.Configure<AzureStorageOptions>(options =>
         : profileImagesContainerName;
 });
 builder.Services.AddScoped<AzureStorageService>();
+builder.Services.Configure<AzureCommunicationOptions>(
+    builder.Configuration.GetSection(AzureCommunicationOptions.SectionName));
+
+builder.Services
+    .AddHealthChecks()
+    .AddCheck(
+        "self",
+        () => HealthCheckResult.Healthy("The API process is running."),
+        tags: ["live", "full"])
+    .AddCheck<ApplicationDbContextHealthCheck>(
+        "database",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: ["ready", "full", "database"],
+        timeout: TimeSpan.FromSeconds(10))
+    .AddCheck<AzureBlobStorageHealthCheck>(
+        "azure_blob_storage",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: ["ready", "full", "storage"],
+        timeout: TimeSpan.FromSeconds(10))
+    .AddCheck<AzureCommunicationServicesHealthCheck>(
+        "azure_communication_services",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: ["ready", "full", "communication"],
+        timeout: TimeSpan.FromSeconds(10));
 
 // Email
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
@@ -136,9 +164,14 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<IProfileImageService, ProfileImageService>();
 builder.Services.AddScoped<AdminService>();
+builder.Services.AddScoped<AdminDiagnosticsService>();
 builder.Services.AddScoped<TeacherDashboardService>();
 builder.Services.AddScoped<CourseService>();
-builder.Services.AddScoped<LiveClassService>();
+builder.Services.AddScoped<IMaterialService, MaterialService>();
+builder.Services.AddScoped<ILiveSessionService, LiveSessionService>();
+builder.Services.AddScoped<IAzureCommunicationIdentityService, AzureCommunicationIdentityService>();
+builder.Services.AddScoped<IAzureCommunicationLiveSessionService, AzureCommunicationLiveSessionService>();
+builder.Services.AddScoped<ILiveSessionJoinService, LiveSessionJoinService>();
 builder.Services.AddScoped<StudentDashboardService>();
 builder.Services.AddScoped<IReportingService, ReportingService>();
 builder.Services.AddScoped<IdentitySeeder>();
@@ -195,10 +228,10 @@ if (testConnectionRequested)
     return;
 }
 
-// Apply migrations + seed (TEMP DISABLED TO PREVENT STARTUP CRASH)
+// Apply pending migrations on startup. Identity seeding remains manual.
 try
 {
-    // await ApplyPendingMigrationsAsync(app);
+    await ApplyPendingMigrationsAsync(app);
     // await SeedIdentityAsync(app);
 }
 catch (Exception ex)
@@ -223,6 +256,43 @@ app.UseCors("AllowFrontend");
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = registration => registration.Tags.Contains("live"),
+    AllowCachingResponses = false,
+    ResultStatusCodes =
+    {
+        [HealthStatus.Healthy] = StatusCodes.Status200OK,
+        [HealthStatus.Degraded] = StatusCodes.Status200OK,
+        [HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable
+    }
+});
+
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = registration => registration.Tags.Contains("ready"),
+    AllowCachingResponses = false,
+    ResultStatusCodes =
+    {
+        [HealthStatus.Healthy] = StatusCodes.Status200OK,
+        [HealthStatus.Degraded] = StatusCodes.Status200OK,
+        [HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable
+    }
+});
+
+app.MapHealthChecks("/health/full", new HealthCheckOptions
+{
+    Predicate = registration => registration.Tags.Contains("full"),
+    AllowCachingResponses = false,
+    ResponseWriter = HealthCheckResponseWriter.WriteFullResponseAsync,
+    ResultStatusCodes =
+    {
+        [HealthStatus.Healthy] = StatusCodes.Status200OK,
+        [HealthStatus.Degraded] = StatusCodes.Status200OK,
+        [HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable
+    }
+});
 
 app.MapControllers();
 

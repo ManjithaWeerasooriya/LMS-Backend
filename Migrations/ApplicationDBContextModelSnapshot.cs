@@ -179,47 +179,124 @@ namespace LMS_Backend.Migrations
                     b.ToTable("CourseEnrollments");
                 });
 
-            modelBuilder.Entity("LMS_Backend.Models.Entities.LiveClass", b =>
+            modelBuilder.Entity("LMS_Backend.Models.Entities.LiveSession", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<Guid?>("CourseId")
+                    b.Property<string>("AcsRecordingId")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("ChatThreadId")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("CourseId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<int?>("DurationMinutes")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("EnableRecording")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("MeetingLink")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<DateTime>("ScheduledAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("TeacherId")
+                    b.Property<string>("CreatedByTeacherId")
                         .IsRequired()
                         .HasColumnType("nvarchar(450)");
 
-                    b.Property<string>("Topic")
+                    b.Property<string>("Description")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<int>("DurationMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MeetingType")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("PlaybackEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("RecordingEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("RecordingStartedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("RecordingStatus")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("RecordingStoppedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("RecordingUrl")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("RoomId")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("StartTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("CourseId");
+                    b.HasIndex("CourseId", "StartTime");
 
-                    b.HasIndex("TeacherId");
+                    b.HasIndex("CreatedByTeacherId", "StartTime");
 
-                    b.ToTable("LiveClasses");
+                    b.ToTable("LiveSessions", (string)null);
+                });
+
+            modelBuilder.Entity("LMS_Backend.Models.Entities.LiveSessionAttendance", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AttendanceStatus")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DurationSeconds")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("JoinTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("LastSeenAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("LeaveTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("StudentId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LastSeenAt");
+
+                    b.HasIndex("StudentId");
+
+                    b.HasIndex("SessionId", "StudentId")
+                        .IsUnique();
+
+                    b.ToTable("LiveSessionAttendances", (string)null);
                 });
 
             modelBuilder.Entity("LMS_Backend.Models.Entities.Material", b =>
@@ -573,6 +650,10 @@ namespace LMS_Backend.Migrations
                     b.Property<int>("AccessFailedCount")
                         .HasColumnType("int");
 
+                    b.Property<string>("AcsIdentityId")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
                         .HasColumnType("nvarchar(max)");
@@ -616,6 +697,12 @@ namespace LMS_Backend.Migrations
                     b.Property<string>("Phone")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("PhoneNumber")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("PhoneNumberConfirmed")
+                        .HasColumnType("bit");
+
                     b.Property<string>("ProfileImageBlobName")
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
@@ -623,12 +710,6 @@ namespace LMS_Backend.Migrations
                     b.Property<string>("ProfileImageUrl")
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
-
-                    b.Property<string>("PhoneNumber")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<bool>("PhoneNumberConfirmed")
-                        .HasColumnType("bit");
 
                     b.Property<string>("SecurityStamp")
                         .HasColumnType("nvarchar(max)");
@@ -849,22 +930,42 @@ namespace LMS_Backend.Migrations
                     b.Navigation("Student");
                 });
 
-            modelBuilder.Entity("LMS_Backend.Models.Entities.LiveClass", b =>
+            modelBuilder.Entity("LMS_Backend.Models.Entities.LiveSession", b =>
                 {
                     b.HasOne("LMS_Backend.Models.Entities.Course", "Course")
-                        .WithMany("LiveClasses")
+                        .WithMany("LiveSessions")
                         .HasForeignKey("CourseId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
-                    b.HasOne("LMS_Backend.Models.Entities.User", "Teacher")
-                        .WithMany()
-                        .HasForeignKey("TeacherId")
+                    b.HasOne("LMS_Backend.Models.Entities.User", "CreatedByTeacher")
+                        .WithMany("CreatedLiveSessions")
+                        .HasForeignKey("CreatedByTeacherId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Course");
 
-                    b.Navigation("Teacher");
+                    b.Navigation("CreatedByTeacher");
+                });
+
+            modelBuilder.Entity("LMS_Backend.Models.Entities.LiveSessionAttendance", b =>
+                {
+                    b.HasOne("LMS_Backend.Models.Entities.LiveSession", "Session")
+                        .WithMany("Attendances")
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LMS_Backend.Models.Entities.User", "Student")
+                        .WithMany("LiveSessionAttendances")
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Session");
+
+                    b.Navigation("Student");
                 });
 
             modelBuilder.Entity("LMS_Backend.Models.Entities.Material", b =>
@@ -1041,9 +1142,14 @@ namespace LMS_Backend.Migrations
 
                     b.Navigation("Enrollments");
 
-                    b.Navigation("LiveClasses");
+                    b.Navigation("LiveSessions");
 
                     b.Navigation("Quizzes");
+                });
+
+            modelBuilder.Entity("LMS_Backend.Models.Entities.LiveSession", b =>
+                {
+                    b.Navigation("Attendances");
                 });
 
             modelBuilder.Entity("LMS_Backend.Models.Entities.Question", b =>
@@ -1073,6 +1179,13 @@ namespace LMS_Backend.Migrations
             modelBuilder.Entity("LMS_Backend.Models.Entities.StudentAnswer", b =>
                 {
                     b.Navigation("SelectedOptions");
+                });
+
+            modelBuilder.Entity("LMS_Backend.Models.Entities.User", b =>
+                {
+                    b.Navigation("CreatedLiveSessions");
+
+                    b.Navigation("LiveSessionAttendances");
                 });
 #pragma warning restore 612, 618
         }

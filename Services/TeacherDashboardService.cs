@@ -58,12 +58,12 @@ public class TeacherDashboardService
         var upcomingLiveSessions = attendanceStats.UpcomingSessionDetails
             .Select(l => new TeacherDashboardLiveSessionItemDto
             {
-                LiveClassId = l.LiveClassId,
-                Topic = l.Topic,
-                ScheduledAt = l.ScheduledAt,
+                LiveSessionId = l.LiveSessionId,
+                Title = l.Title,
+                StartTime = l.StartTime,
                 CourseTitle = l.CourseTitle,
                 StudentsEnrolled = l.StudentsEnrolled,
-                MeetingLink = l.MeetingLink
+                Status = l.Status
             })
             .ToList();
 

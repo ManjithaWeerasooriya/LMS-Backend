@@ -10,6 +10,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Azure.Communication.CallAutomation" Version="1.5.1" />
+    <PackageReference Include="Azure.Communication.Chat" Version="1.4.0" />
+    <PackageReference Include="Azure.Communication.Identity" Version="1.3.1" />
+    <PackageReference Include="Azure.Communication.Rooms" Version="1.2.0" />
     <PackageReference Include="Azure.Storage.Blobs" Version="12.27.0" />
     <PackageReference Include="MailKit" Version="4.15.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.3" />
