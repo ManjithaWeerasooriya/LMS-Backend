@@ -2,6 +2,7 @@ using Azure;
 using Azure.Communication;
 using Azure.Communication.CallAutomation;
 using Azure.Communication.Chat;
+using Azure.Communication.Rooms;
 using LMS_Backend.Models.Entities;
 using LMS_Backend.Models.Exceptions;
 using Microsoft.Extensions.Options;
@@ -11,7 +12,9 @@ namespace LMS_Backend.Services;
 public class AzureCommunicationLiveSessionService : IAzureCommunicationLiveSessionService
 {
     private static readonly object CallAutomationClientLock = new();
+    private static readonly object RoomsClientLock = new();
     private static CallAutomationClient? SharedCallAutomationClient;
+    private static RoomsClient? SharedRoomsClient;
 
     private readonly IAzureCommunicationIdentityService _azureCommunicationIdentityService;
     private readonly AzureCommunicationOptions _options;
@@ -22,6 +25,59 @@ public class AzureCommunicationLiveSessionService : IAzureCommunicationLiveSessi
     {
         _azureCommunicationIdentityService = azureCommunicationIdentityService;
         _options = options.Value;
+    }
+
+    public async Task<string> CreateRoomAsync(
+        DateTime startTime,
+        int durationMinutes,
+        CancellationToken cancellationToken)
+    {
+        ValidateConfiguration();
+
+        try
+        {
+            var response = await GetRoomsClient().CreateRoomAsync(
+                BuildRoomCreateOptions(startTime, durationMinutes),
+                cancellationToken);
+
+            var roomId = response.Value.Id?.Trim();
+            if (string.IsNullOrWhiteSpace(roomId))
+            {
+                throw new ServiceUnavailableException("Azure Communication Services did not return a room identifier.");
+            }
+
+            return roomId;
+        }
+        catch (RequestFailedException ex)
+        {
+            throw new ServiceUnavailableException("Azure Communication Services rooms are unavailable.", ex);
+        }
+    }
+
+    public async Task UpdateRoomAsync(
+        string roomId,
+        DateTime startTime,
+        int durationMinutes,
+        CancellationToken cancellationToken)
+    {
+        ValidateConfiguration();
+
+        if (string.IsNullOrWhiteSpace(roomId))
+        {
+            throw new ArgumentException("Room id is required.");
+        }
+
+        try
+        {
+            await GetRoomsClient().UpdateRoomAsync(
+                roomId.Trim(),
+                BuildRoomUpdateOptions(startTime, durationMinutes),
+                cancellationToken);
+        }
+        catch (RequestFailedException ex)
+        {
+            throw new ServiceUnavailableException("Azure Communication Services rooms are unavailable.", ex);
+        }
     }
 
     public async Task<string> CreateChatThreadAsync(
@@ -194,15 +250,12 @@ public class AzureCommunicationLiveSessionService : IAzureCommunicationLiveSessi
 
     private static StartRecordingOptions ResolveRecordingOptions(LiveSession session)
     {
-        var meetingDetails = LiveSessionMeetingContract.ValidateAndNormalize(session);
-
-        return meetingDetails.MeetingType switch
+        if (session.MeetingType != MeetingType.Room || string.IsNullOrWhiteSpace(session.RoomId))
         {
-            MeetingType.Room => new StartRecordingOptions(new RoomCallLocator(meetingDetails.RoomId!)),
-            MeetingType.Group => new StartRecordingOptions(new GroupCallLocator(meetingDetails.GroupId!)),
-            MeetingType.Teams => throw new ConflictException("Teams live sessions are not configured for ACS recording."),
-            _ => throw new ConflictException("This live session is not configured for ACS recording.")
-        };
+            throw new ConflictException("This live session is not configured for ACS room recording.");
+        }
+
+        return new StartRecordingOptions(new RoomCallLocator(session.RoomId.Trim()));
     }
 
     private CallRecording GetCallRecordingClient()
@@ -220,6 +273,57 @@ public class AzureCommunicationLiveSessionService : IAzureCommunicationLiveSessi
         }
 
         return SharedCallAutomationClient.GetCallRecording();
+    }
+
+    private RoomsClient GetRoomsClient()
+    {
+        ValidateConfiguration();
+
+        if (SharedRoomsClient != null)
+        {
+            return SharedRoomsClient;
+        }
+
+        lock (RoomsClientLock)
+        {
+            SharedRoomsClient ??= new RoomsClient(_options.ConnectionString!);
+        }
+
+        return SharedRoomsClient;
+    }
+
+    private static CreateRoomOptions BuildRoomCreateOptions(DateTime startTime, int durationMinutes)
+    {
+        var (validFrom, validUntil) = BuildRoomWindow(startTime, durationMinutes);
+        return new CreateRoomOptions
+        {
+            ValidFrom = validFrom,
+            ValidUntil = validUntil
+        };
+    }
+
+    private static UpdateRoomOptions BuildRoomUpdateOptions(DateTime startTime, int durationMinutes)
+    {
+        var (validFrom, validUntil) = BuildRoomWindow(startTime, durationMinutes);
+        return new UpdateRoomOptions
+        {
+            ValidFrom = validFrom,
+            ValidUntil = validUntil
+        };
+    }
+
+    private static (DateTimeOffset validFrom, DateTimeOffset validUntil) BuildRoomWindow(
+        DateTime startTime,
+        int durationMinutes)
+    {
+        var scheduledStart = startTime.Kind == DateTimeKind.Unspecified
+            ? DateTime.SpecifyKind(startTime, DateTimeKind.Utc)
+            : startTime.ToUniversalTime();
+
+        var validFrom = new DateTimeOffset(scheduledStart.AddMinutes(-15));
+        var validUntil = new DateTimeOffset(scheduledStart.AddMinutes(durationMinutes + 60));
+
+        return (validFrom, validUntil);
     }
 
     private void ValidateConfiguration()

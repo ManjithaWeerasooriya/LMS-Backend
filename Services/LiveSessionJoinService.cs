@@ -38,7 +38,7 @@ public class LiveSessionJoinService : ILiveSessionJoinService
             throw new NotFoundException("Live session not found.");
         }
 
-        var meetingDetails = EnsureSessionCanBeJoined(session);
+        EnsureSessionCanBeJoined(session);
 
         var user = await _context.Users
             .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
@@ -81,12 +81,8 @@ public class LiveSessionJoinService : ILiveSessionJoinService
             Token = tokenResult.Token,
             DisplayName = tokenResult.DisplayName,
             AcsEndpoint = tokenResult.Endpoint,
-            MeetingType = meetingDetails.MeetingType,
-            RoomId = meetingDetails.RoomId,
-            GroupId = meetingDetails.GroupId,
-            MeetingLink = meetingDetails.MeetingLink,
-            MeetingId = meetingDetails.MeetingId,
-            Passcode = meetingDetails.Passcode,
+            MeetingType = MeetingType.Room,
+            RoomId = session.RoomId,
             ChatThreadId = session.ChatThreadId,
             Session = new LiveSessionJoinMetadataDto
             {
@@ -101,7 +97,7 @@ public class LiveSessionJoinService : ILiveSessionJoinService
         };
     }
 
-    private static LiveSessionMeetingDetails EnsureSessionCanBeJoined(LiveSession session)
+    private static void EnsureSessionCanBeJoined(LiveSession session)
     {
         if (session.Status == LiveSessionStatus.Cancelled)
         {
@@ -113,19 +109,15 @@ public class LiveSessionJoinService : ILiveSessionJoinService
             throw new ConflictException("This live session has already ended.");
         }
 
-        try
+        if (session.MeetingType != MeetingType.Room || string.IsNullOrWhiteSpace(session.RoomId))
         {
-            return LiveSessionMeetingContract.ValidateAndNormalize(session);
-        }
-        catch (ArgumentException ex)
-        {
-            throw new ConflictException($"This live session is not configured for joining: {ex.Message}");
+            throw new ConflictException("This live session is not configured for ACS room joining.");
         }
     }
 
     private static bool ShouldLimitToJoinOnly(LiveSession session)
     {
-        return session.MeetingType == MeetingType.Room;
+        return true;
     }
 
     private static string BuildDisplayName(User user)

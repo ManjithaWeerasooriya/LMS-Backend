@@ -31,13 +31,10 @@ public class LiveSessionService : ILiveSessionService
 
         var teacher = await GetRequiredUserAsync(teacherId, cancellationToken);
         var chatThreadId = NormalizeOptional(dto.ChatThreadId);
-        var meetingDetails = LiveSessionMeetingContract.ValidateAndNormalize(
-            dto.MeetingType,
-            dto.RoomId,
-            dto.GroupId,
-            dto.MeetingLink,
-            dto.MeetingId,
-            dto.Passcode);
+        var roomId = await _azureCommunicationLiveSessionService.CreateRoomAsync(
+            dto.StartTime,
+            dto.DurationMinutes,
+            cancellationToken);
 
         if (chatThreadId == null)
         {
@@ -58,11 +55,12 @@ public class LiveSessionService : ILiveSessionService
             Status = LiveSessionStatus.Scheduled,
             RecordingEnabled = dto.RecordingEnabled,
             PlaybackEnabled = dto.PlaybackEnabled,
+            MeetingType = MeetingType.Room,
+            RoomId = roomId,
             ChatThreadId = chatThreadId,
             CreatedByTeacherId = teacherId,
             CreatedAt = DateTime.UtcNow
         };
-        LiveSessionMeetingContract.ApplyToSession(session, meetingDetails);
 
         _context.LiveSessions.Add(session);
         await _context.SaveChangesAsync(cancellationToken);
@@ -77,13 +75,6 @@ public class LiveSessionService : ILiveSessionService
         CancellationToken cancellationToken)
     {
         var session = await GetManagedSessionAsync(teacherId, sessionId, cancellationToken);
-        var meetingDetails = LiveSessionMeetingContract.ValidateAndNormalize(
-            dto.MeetingType,
-            dto.RoomId,
-            dto.GroupId,
-            dto.MeetingLink,
-            dto.MeetingId,
-            dto.Passcode);
 
         session.Title = NormalizeRequired(dto.Title, "Title");
         session.Description = NormalizeOptional(dto.Description);
@@ -92,8 +83,24 @@ public class LiveSessionService : ILiveSessionService
         session.RecordingEnabled = dto.RecordingEnabled;
         session.PlaybackEnabled = dto.PlaybackEnabled;
         session.ChatThreadId = NormalizeOptional(dto.ChatThreadId);
+        session.MeetingType = MeetingType.Room;
         session.UpdatedAt = DateTime.UtcNow;
-        LiveSessionMeetingContract.ApplyToSession(session, meetingDetails);
+
+        if (string.IsNullOrWhiteSpace(session.RoomId))
+        {
+            session.RoomId = await _azureCommunicationLiveSessionService.CreateRoomAsync(
+                session.StartTime,
+                session.DurationMinutes,
+                cancellationToken);
+        }
+        else
+        {
+            await _azureCommunicationLiveSessionService.UpdateRoomAsync(
+                session.RoomId,
+                session.StartTime,
+                session.DurationMinutes,
+                cancellationToken);
+        }
 
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -130,6 +137,11 @@ public class LiveSessionService : ILiveSessionService
             if (string.IsNullOrWhiteSpace(session.ChatThreadId))
             {
                 await EnsureSessionHasChatThreadAsync(session, cancellationToken);
+            }
+
+            if (string.IsNullOrWhiteSpace(session.RoomId))
+            {
+                await EnsureSessionHasRoomAsync(session, cancellationToken);
                 await _context.SaveChangesAsync(cancellationToken);
             }
 
@@ -142,6 +154,7 @@ public class LiveSessionService : ILiveSessionService
         }
 
         await EnsureSessionHasChatThreadAsync(session, cancellationToken);
+        await EnsureSessionHasRoomAsync(session, cancellationToken);
 
         session.Status = LiveSessionStatus.Live;
         session.UpdatedAt = DateTime.UtcNow;
@@ -677,6 +690,23 @@ public class LiveSessionService : ILiveSessionService
             cancellationToken);
     }
 
+    private async Task EnsureSessionHasRoomAsync(
+        LiveSession session,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(session.RoomId))
+        {
+            session.MeetingType = MeetingType.Room;
+            return;
+        }
+
+        session.RoomId = await _azureCommunicationLiveSessionService.CreateRoomAsync(
+            session.StartTime,
+            session.DurationMinutes,
+            cancellationToken);
+        session.MeetingType = MeetingType.Room;
+    }
+
     private async Task StopRecordingInternalAsync(
         LiveSession session,
         CancellationToken cancellationToken)
@@ -740,10 +770,6 @@ public class LiveSessionService : ILiveSessionService
             PlaybackEnabled = session.PlaybackEnabled,
             MeetingType = session.MeetingType,
             RoomId = session.RoomId,
-            GroupId = session.GroupId,
-            MeetingLink = session.MeetingLink,
-            MeetingId = session.MeetingId,
-            Passcode = session.Passcode,
             ChatThreadId = session.ChatThreadId,
             AcsRecordingId = session.AcsRecordingId,
             RecordingStatus = session.RecordingStatus,

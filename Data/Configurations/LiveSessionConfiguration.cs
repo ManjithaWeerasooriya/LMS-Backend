@@ -19,18 +19,6 @@ public class LiveSessionConfiguration : IEntityTypeConfiguration<LiveSession>
         builder.Property(s => s.RoomId)
             .HasMaxLength(200);
 
-        builder.Property(s => s.GroupId)
-            .HasMaxLength(100);
-
-        builder.Property(s => s.MeetingLink)
-            .HasMaxLength(1000);
-
-        builder.Property(s => s.MeetingId)
-            .HasMaxLength(200);
-
-        builder.Property(s => s.Passcode)
-            .HasMaxLength(200);
-
         builder.Property(s => s.ChatThreadId)
             .HasMaxLength(200);
 

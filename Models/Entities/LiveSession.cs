@@ -37,18 +37,6 @@ public class LiveSession
     [MaxLength(200)]
     public string? RoomId { get; set; }
 
-    [MaxLength(100)]
-    public string? GroupId { get; set; }
-
-    [MaxLength(1000)]
-    public string? MeetingLink { get; set; }
-
-    [MaxLength(200)]
-    public string? MeetingId { get; set; }
-
-    [MaxLength(200)]
-    public string? Passcode { get; set; }
-
     [MaxLength(200)]
     public string? ChatThreadId { get; set; }
 

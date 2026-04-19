@@ -1,6 +1,7 @@
 using LMS_Backend.Models.Entities;
 using LMS_Backend.Models.Exceptions;
 using Microsoft.EntityFrameworkCore;
+using Moq;
 
 namespace LMS_Backend.Tests.LiveSessions;
 
@@ -23,8 +24,13 @@ public class LiveSessionServiceTests
         Assert.Equal(fixture.Teacher.Id, created.CreatedByTeacherId);
         Assert.Equal(LiveSessionStatus.Scheduled, created.Status);
         Assert.Equal(MeetingType.Room, created.MeetingType);
-        Assert.Equal("room-123", created.RoomId);
+        Assert.Equal("room-generated", created.RoomId);
         Assert.Equal("chat-thread-generated", created.ChatThreadId);
+
+        fixture.AzureLiveSessionServiceMock.Verify(liveSessionService => liveSessionService.CreateRoomAsync(
+            request.StartTime,
+            request.DurationMinutes,
+            It.IsAny<CancellationToken>()), Times.Once);
 
         var stored = await fixture.Context.LiveSessions.SingleAsync();
         Assert.Equal(created.Id, stored.Id);
@@ -54,47 +60,19 @@ public class LiveSessionServiceTests
         Assert.True(updated.RecordingEnabled);
         Assert.True(updated.PlaybackEnabled);
         Assert.Equal(MeetingType.Room, updated.MeetingType);
-        Assert.Equal("room-456", updated.RoomId);
+        Assert.Equal("room-123", updated.RoomId);
         Assert.Equal("chat-thread-updated", updated.ChatThreadId);
+
+        fixture.AzureLiveSessionServiceMock.Verify(liveSessionService => liveSessionService.UpdateRoomAsync(
+            "room-123",
+            update.StartTime,
+            update.DurationMinutes,
+            It.IsAny<CancellationToken>()), Times.Once);
 
         await Assert.ThrowsAsync<ForbiddenException>(() => service.UpdateLiveSessionAsync(
             fixture.OtherTeacher.Id,
             session.Id,
             update,
-            CancellationToken.None));
-    }
-
-    [Fact]
-    public async Task CreateLiveSessionAsync_RejectsMissingMultipleAndMalformedLocators()
-    {
-        await using var fixture = await LiveSessionTestFixture.CreateAsync();
-        var service = fixture.CreateLiveSessionService();
-
-        var missingLocator = fixture.CreateRequest(roomId: null);
-        var multipleLocators = fixture.CreateRequest(
-            roomId: "room-123",
-            groupId: Guid.NewGuid().ToString());
-        var invalidGroup = fixture.CreateRequest(
-            meetingType: MeetingType.Group,
-            roomId: null,
-            groupId: "not-a-guid");
-
-        await Assert.ThrowsAsync<ArgumentException>(() => service.CreateLiveSessionAsync(
-            fixture.Teacher.Id,
-            fixture.OwnedCourse.Id,
-            missingLocator,
-            CancellationToken.None));
-
-        await Assert.ThrowsAsync<ArgumentException>(() => service.CreateLiveSessionAsync(
-            fixture.Teacher.Id,
-            fixture.OwnedCourse.Id,
-            multipleLocators,
-            CancellationToken.None));
-
-        await Assert.ThrowsAsync<ArgumentException>(() => service.CreateLiveSessionAsync(
-            fixture.Teacher.Id,
-            fixture.OwnedCourse.Id,
-            invalidGroup,
             CancellationToken.None));
     }
 

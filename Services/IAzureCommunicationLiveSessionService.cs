@@ -4,6 +4,17 @@ namespace LMS_Backend.Services;
 
 public interface IAzureCommunicationLiveSessionService
 {
+    Task<string> CreateRoomAsync(
+        DateTime startTime,
+        int durationMinutes,
+        CancellationToken cancellationToken);
+
+    Task UpdateRoomAsync(
+        string roomId,
+        DateTime startTime,
+        int durationMinutes,
+        CancellationToken cancellationToken);
+
     Task<string> CreateChatThreadAsync(
         User actingUser,
         string actingDisplayName,
