@@ -114,6 +114,24 @@ public class StudentMaterialsControllerTests
     }
 
     [Fact]
+    public async Task GetMaterialById_MissingMaterial_ReturnsNotFoundResponse()
+    {
+        var service = new Mock<IMaterialService>();
+        service
+            .Setup(s => s.GetStudentMaterialByIdAsync("student-404", 404, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new NotFoundException("Material not found."));
+
+        var controller = CreateController(service.Object, CreateUser("student-404"));
+
+        var result = await controller.GetMaterialById(404);
+
+        var notFound = Assert.IsType<NotFoundObjectResult>(result);
+        var response = Assert.IsType<ApiResponse<object?>>(notFound.Value);
+        Assert.False(response.Success);
+        Assert.Equal("Material not found.", response.Message);
+    }
+
+    [Fact]
     public async Task DownloadMaterial_EnrolledStudent_ReturnsFileStreamResult()
     {
         var service = new Mock<IMaterialService>();
