@@ -93,6 +93,64 @@ The extension starts the same local emulator services, so the backend will still
 - `.env.Production` contains `AzureStorage__ConnectionString`, which must be set to your real Azure Storage account connection string before deployment.
 - Production does not use Azurite.
 
+## Azure Communication Services (Live Classes)
+The backend is prepared to use Azure Communication Services (ACS) for live classes via configuration only. No feature code is wired up yet; this sprint focuses on DevOps and configuration so future work can plug into ACS.
+
+### 1. Create an ACS resource
+Use either the Azure Portal or Azure CLI:
+
+- In the Azure Portal:
+  1. Go to `Create a resource` and search for `Communication Services`.
+  2. Create a new resource (e.g., name `lms-acs-liveclass`) in the same subscription and region as the backend Web App.
+  3. After deployment, open the resource and go to **Keys & Connection String** to copy:
+     - The primary connection string.
+     - The endpoint URL.
+
+- With Azure CLI (example):
+  ```bash
+  az communication create \
+    --name lms-acs-liveclass \
+    --resource-group <your-resource-group> \
+    --data-location <region> \
+    --location <region>
+  ```
+  Then retrieve keys:
+  ```bash
+  az communication list-key \
+    --name lms-acs-liveclass \
+    --resource-group <your-resource-group>
+  ```
+
+### 2. Configuration keys used by the backend
+The backend expects ACS configuration under the `AzureCommunication` section:
+
+- In `appsettings.json` / `appsettings.Development.json`:
+  - `AzureCommunication:ConnectionString`
+  - `AzureCommunication:Endpoint`
+
+These are defined but left empty by default so that real secrets can be supplied via environment variables or App Service configuration.
+
+### 3. Local development configuration
+For local development, configure ACS in `.env` (do not commit real secrets for shared environments):
+
+```bash
+AzureCommunication__ConnectionString="<your-dev-acs-connection-string>"
+AzureCommunication__Endpoint="<your-dev-acs-endpoint>"
+```
+
+When running via `dotnet run`, ASP.NET Core will bind these to `AzureCommunication:ConnectionString` and `AzureCommunication:Endpoint`.
+
+### 4. Production configuration
+For production, prefer setting ACS values as App Settings on the Azure Web App hosting the backend:
+
+- In the Azure Portal, open your Web App (e.g., `lms-backend-deepana`).
+- Under **Configuration → Application settings**, add:
+  - `AzureCommunication__ConnectionString` = `<your-prod-acs-connection-string>`
+  - `AzureCommunication__Endpoint` = `<your-prod-acs-endpoint>`
+- Save and restart the Web App.
+
+These values will be available to the backend at runtime via the standard configuration system without hardcoding them into the repository. `.env.Production` contains commented placeholders for the same keys if you choose to manage them via environment files instead.
+
 ### Password Reset Flow
 - `POST /api/v1/auth/forgot-password` accepts `{ "email": "user@example.com" }` and always returns `{ "message": "If an account with this email exists, a password reset link has been sent." }`. Behind the scenes, the API only generates a token and sends email when the address exists and is confirmed, but the consistent response prevents account enumeration.
 - The email contains a URL-safe token plus the `userId`; clients should direct users to a UI that calls `POST /api/v1/auth/reset-password` with `{ "userId": "...", "token": "...", "newPassword": "NewPassword123!", "confirmPassword": "NewPassword123!" }`.

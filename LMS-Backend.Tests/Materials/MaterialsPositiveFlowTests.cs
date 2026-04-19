@@ -1,13 +1,16 @@
 using System.Security.Claims;
 using LMS_Backend.Controllers;
 using LMS_Backend.Data;
+using LMS_Backend.Models.DTOs.Common;
+using LMS_Backend.Models.DTOs.Materials;
 using LMS_Backend.Models.Entities;
 using LMS_Backend.Services;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using Azure.Storage.Blobs;
+using Moq;
 
 namespace LMS_Backend.Tests.Materials;
 
@@ -55,7 +58,7 @@ public class MaterialsPositiveFlowTests
         var result = await controller.GetByCourse(course.Id);
 
         var ok = Assert.IsType<OkObjectResult>(result);
-        var materials = Assert.IsAssignableFrom<List<Material>>(ok.Value);
+        var materials = Assert.IsAssignableFrom<IReadOnlyList<MaterialDto>>(ok.Value);
         Assert.Equal(2, materials.Count);
         Assert.Equal("Week 02", materials[0].Title);
     }
@@ -90,7 +93,7 @@ public class MaterialsPositiveFlowTests
         var result = await controller.GetById(material.Id);
 
         var ok = Assert.IsType<OkObjectResult>(result);
-        var returned = Assert.IsType<Material>(ok.Value);
+        var returned = Assert.IsType<MaterialDto>(ok.Value);
         Assert.Equal(material.Title, returned.Title);
         Assert.Equal(material.FileUrl, returned.FileUrl);
     }
@@ -123,12 +126,18 @@ public class MaterialsPositiveFlowTests
         var controller = CreateController(context, CreateStorageStub(), CreateUser("teacher-2", "Teacher"));
         var result = await controller.GetByCourse(course.Id);
 
-        Assert.IsType<ForbidResult>(result);
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, objectResult.StatusCode);
+
+        var response = Assert.IsType<ApiResponse<object?>>(objectResult.Value);
+        Assert.False(response.Success);
+        Assert.Equal("You do not have access to manage materials for this course.", response.Message);
     }
 
     private static MaterialsController CreateController(ApplicationDBContext context, AzureStorageService storage, ClaimsPrincipal user)
     {
-        return new MaterialsController(storage, context)
+        var materialService = new MaterialService(context, storage);
+        return new MaterialsController(storage, context, materialService)
         {
             ControllerContext = new ControllerContext
             {
@@ -157,8 +166,14 @@ public class MaterialsPositiveFlowTests
 
     private static AzureStorageService CreateStorageStub()
     {
+        var environment = new Mock<IWebHostEnvironment>();
+        environment.SetupGet(env => env.EnvironmentName).Returns("Development");
+
         return new AzureStorageService(
-            new BlobServiceClient("UseDevelopmentStorage=true"),
-            Options.Create(new AzureStorageOptions()));
+            Options.Create(new AzureStorageOptions
+            {
+                ConnectionString = "UseDevelopmentStorage=true"
+            }),
+            environment.Object);
     }
 }

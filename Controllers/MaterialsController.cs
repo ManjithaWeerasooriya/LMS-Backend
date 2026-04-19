@@ -1,5 +1,5 @@
-using System.Security.Claims;
 using LMS_Backend.Data;
+using LMS_Backend.Infrastructure.Auth;
 using LMS_Backend.Models.Entities;
 using LMS_Backend.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -10,10 +10,11 @@ namespace LMS_Backend.Controllers;
 
 [ApiController]
 [Route("api/v1/teacher/materials")]
-public class MaterialsController : ControllerBase
+public class MaterialsController : ApiControllerBase
 {
     private readonly AzureStorageService _azureStorageService;
     private readonly ApplicationDBContext _dbContext;
+    private readonly IMaterialService _materialService;
 
     private static readonly string[] AllowedExtensions =
     {
@@ -39,14 +40,16 @@ public class MaterialsController : ControllerBase
 
     public MaterialsController(
         AzureStorageService azureStorageService,
-        ApplicationDBContext dbContext)
+        ApplicationDBContext dbContext,
+        IMaterialService materialService)
     {
         _azureStorageService = azureStorageService;
         _dbContext = dbContext;
+        _materialService = materialService;
     }
 
     [HttpPost("upload")]
-    [Authorize(Roles = "Teacher")]
+    [Authorize(Policy = AppPolicies.TeacherOnly)]
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> Upload(
         [FromForm(Name = "file")] IFormFile file,
@@ -72,7 +75,7 @@ public class MaterialsController : ControllerBase
 
         var userId = GetCurrentUserId();
         if (string.IsNullOrEmpty(userId))
-            return Unauthorized();
+            return UnauthorizedResponse();
 
         var ownsCourse = await IsTeacherOwnerOfCourse(userId, courseId);
         if (!ownsCourse)
@@ -112,104 +115,122 @@ public class MaterialsController : ControllerBase
 
     [HttpGet("course/{courseId:guid}")]
     [Authorize(Roles = "Teacher,Student")]
-    public async Task<IActionResult> GetByCourse(Guid courseId)
+    public async Task<IActionResult> GetByCourse(
+        Guid courseId,
+        CancellationToken cancellationToken = default)
     {
         var userId = GetCurrentUserId();
         if (string.IsNullOrEmpty(userId))
-            return Unauthorized();
+            return UnauthorizedResponse();
 
-        var allowed =
-            (User.IsInRole("Teacher") && await IsTeacherOwnerOfCourse(userId, courseId)) ||
-            (User.IsInRole("Student") && await IsStudentEnrolledInCourse(userId, courseId));
+        try
+        {
+            if (User.IsInRole(AppRoles.Teacher))
+            {
+                var materials = await _materialService.GetTeacherMaterialsByCourseAsync(
+                    userId,
+                    courseId,
+                    cancellationToken);
 
-        if (!allowed)
+                return Ok(materials);
+            }
+
+            if (User.IsInRole(AppRoles.Student))
+            {
+                var materials = await _materialService.GetStudentMaterialsByCourseAsync(
+                    userId,
+                    courseId,
+                    cancellationToken);
+
+                return Ok(materials);
+            }
+
             return Forbid();
-
-        var materials = await _dbContext.Materials
-            .Where(m => m.CourseId == courseId)
-            .OrderByDescending(m => m.CreatedAt)
-            .ToListAsync();
-
-        return Ok(materials);
+        }
+        catch (Exception ex)
+        {
+            return HandleException(ex);
+        }
     }
 
     [HttpGet("{id:int}")]
     [Authorize(Roles = "Teacher,Student")]
-    public async Task<IActionResult> GetById(int id)
+    public async Task<IActionResult> GetById(
+        int id,
+        CancellationToken cancellationToken = default)
     {
         var userId = GetCurrentUserId();
         if (string.IsNullOrEmpty(userId))
-            return Unauthorized();
+            return UnauthorizedResponse();
 
-        var material = await _dbContext.Materials.FirstOrDefaultAsync(m => m.Id == id);
-        if (material == null)
-            return NotFound("Material not found.");
+        try
+        {
+            if (User.IsInRole(AppRoles.Teacher))
+            {
+                var material = await _materialService.GetTeacherMaterialByIdAsync(
+                    userId,
+                    id,
+                    cancellationToken);
 
-        var allowed =
-            (User.IsInRole("Teacher") && await IsTeacherOwnerOfCourse(userId, material.CourseId)) ||
-            (User.IsInRole("Student") && await IsStudentEnrolledInCourse(userId, material.CourseId));
+                return Ok(material);
+            }
 
-        if (!allowed)
+            if (User.IsInRole(AppRoles.Student))
+            {
+                var material = await _materialService.GetStudentMaterialByIdAsync(
+                    userId,
+                    id,
+                    cancellationToken);
+
+                return Ok(material);
+            }
+
             return Forbid();
-
-        return Ok(material);
+        }
+        catch (Exception ex)
+        {
+            return HandleException(ex);
+        }
     }
 
     [HttpGet("{id:int}/download")]
     [Authorize(Roles = "Teacher,Student")]
-    public async Task<IActionResult> Download(int id)
+    public async Task<IActionResult> Download(
+        int id,
+        CancellationToken cancellationToken = default)
     {
         var userId = GetCurrentUserId();
         if (string.IsNullOrEmpty(userId))
-            return Unauthorized();
-
-        var material = await _dbContext.Materials.FirstOrDefaultAsync(m => m.Id == id);
-        if (material == null)
-            return NotFound("Material not found.");
-
-        var allowed =
-            (User.IsInRole("Teacher") && await IsTeacherOwnerOfCourse(userId, material.CourseId)) ||
-            (User.IsInRole("Student") && await IsStudentEnrolledInCourse(userId, material.CourseId));
-
-        if (!allowed)
-            return Forbid();
+            return UnauthorizedResponse();
 
         try
         {
-            var fileResult = await _azureStorageService.DownloadFileAsync(material.BlobName);
-
-            var fileName = material.Title;
-            var extension = Path.GetExtension(material.BlobName);
-
-            if (!string.IsNullOrWhiteSpace(extension) &&
-                !fileName.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
+            if (User.IsInRole(AppRoles.Teacher))
             {
-                fileName += extension;
+                var material = await _materialService.DownloadTeacherMaterialAsync(
+                    userId,
+                    id,
+                    cancellationToken);
+
+                return File(material.Stream, material.ContentType, material.FileName);
             }
 
-            return File(fileResult.Stream, fileResult.ContentType, fileName);
+            if (User.IsInRole(AppRoles.Student))
+            {
+                var material = await _materialService.DownloadStudentMaterialAsync(
+                    userId,
+                    id,
+                    cancellationToken);
+
+                return File(material.Stream, material.ContentType, material.FileName);
+            }
+
+            return Forbid();
         }
-        catch (FileNotFoundException)
+        catch (Exception ex)
         {
-            return NotFound("File not found in storage.");
+            return HandleException(ex);
         }
-    }
-
-    private string? GetCurrentUserId()
-    {
-        return User.FindFirstValue(ClaimTypes.NameIdentifier);
-    }
-
-    private async Task<bool> IsStudentEnrolledInCourse(string userId, Guid courseId)
-    {
-        return await _dbContext.CourseEnrollments
-            .AnyAsync(e => e.StudentId == userId && e.CourseId == courseId);
-    }
-
-    private async Task<bool> IsTeacherOwnerOfCourse(string userId, Guid courseId)
-    {
-        return await _dbContext.Courses
-            .AnyAsync(c => c.Id == courseId && c.TeacherId == userId);
     }
 
     private static string GetMaterialType(string? contentType, string fileName)
@@ -253,5 +274,11 @@ public class MaterialsController : ControllerBase
         // for file parts even when the extension is valid.
         return string.Equals(contentType, "application/octet-stream", StringComparison.OrdinalIgnoreCase)
             && AllowedExtensions.Contains(extension);
+    }
+
+    private async Task<bool> IsTeacherOwnerOfCourse(string userId, Guid courseId)
+    {
+        return await _dbContext.Courses
+            .AnyAsync(c => c.Id == courseId && c.TeacherId == userId);
     }
 }

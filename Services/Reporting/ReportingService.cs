@@ -155,44 +155,87 @@ public class ReportingService : IReportingService
 
     public async Task<AttendanceStatisticsDto> GetAttendanceStatisticsAsync(string? teacherId, CancellationToken cancellationToken)
     {
-        IQueryable<LiveClass> liveClassesQuery = _dbContext.LiveClasses
+        IQueryable<LiveSession> liveSessionsQuery = _dbContext.LiveSessions
             .AsNoTracking()
             .Include(l => l.Course)
-            .ThenInclude(c => c!.Enrollments);
+            .ThenInclude(c => c.Enrollments);
 
         if (!string.IsNullOrWhiteSpace(teacherId))
         {
-            liveClassesQuery = liveClassesQuery.Where(l => l.TeacherId == teacherId);
+            liveSessionsQuery = liveSessionsQuery.Where(l => l.Course.TeacherId == teacherId);
         }
 
         var nowUtc = DateTime.UtcNow;
-        var upcomingQuery = liveClassesQuery.Where(l => l.ScheduledAt >= nowUtc);
-        var completedQuery = liveClassesQuery.Where(l => l.ScheduledAt < nowUtc && l.ScheduledAt >= nowUtc.AddDays(-30));
+        var completedThreshold = nowUtc.AddDays(-30);
+
+        var upcomingQuery = liveSessionsQuery.Where(l =>
+            l.StartTime >= nowUtc &&
+            l.Status != LiveSessionStatus.Cancelled);
+
+        var completedQuery = liveSessionsQuery.Where(l =>
+            l.Status == LiveSessionStatus.Ended &&
+            l.StartTime >= completedThreshold &&
+            l.StartTime < nowUtc);
 
         var upcomingCount = await upcomingQuery.CountAsync(cancellationToken);
         var completedCount = await completedQuery.CountAsync(cancellationToken);
 
         var upcomingSessions = await upcomingQuery
-            .OrderBy(l => l.ScheduledAt)
+            .OrderBy(l => l.StartTime)
             .Take(5)
             .Select(l => new LiveSessionSummaryDto
             {
-                LiveClassId = l.Id,
-                Topic = l.Topic,
-                ScheduledAt = l.ScheduledAt,
-                CourseTitle = l.Course != null ? l.Course.Title : null,
-                StudentsEnrolled = l.Course != null ? l.Course.Enrollments.Count : 0,
-                MeetingLink = l.MeetingLink
+                LiveSessionId = l.Id,
+                Title = l.Title,
+                StartTime = l.StartTime,
+                CourseTitle = l.Course.Title,
+                StudentsEnrolled = l.Course.Enrollments.Count,
+                Status = l.Status
             })
             .ToListAsync(cancellationToken);
+
+        var completedSessions = await completedQuery
+            .Select(l => new
+            {
+                l.Id,
+                EnrolledStudents = l.Course.Enrollments.Count
+            })
+            .ToListAsync(cancellationToken);
+
+        var completedSessionIds = completedSessions
+            .Select(l => l.Id)
+            .ToList();
+
+        var joinedStudentCounts = completedSessionIds.Count == 0
+            ? new Dictionary<Guid, int>()
+            : await _dbContext.LiveSessionAttendances
+                .AsNoTracking()
+                .Where(a => completedSessionIds.Contains(a.SessionId) && a.JoinTime != null)
+                .GroupBy(a => a.SessionId)
+                .Select(g => new
+                {
+                    SessionId = g.Key,
+                    JoinedStudents = g.Count()
+                })
+                .ToDictionaryAsync(x => x.SessionId, x => x.JoinedStudents, cancellationToken);
+
+        var totalExpectedAttendance = completedSessions.Sum(l => l.EnrolledStudents);
+        var totalActualAttendance = completedSessions.Sum(l =>
+            joinedStudentCounts.TryGetValue(l.Id, out var joinedStudents)
+                ? joinedStudents
+                : 0);
+
+        double? attendanceRate = totalExpectedAttendance == 0
+            ? null
+            : Math.Round((double)totalActualAttendance / totalExpectedAttendance * 100.0, 1);
 
         return new AttendanceStatisticsDto
         {
             UpcomingSessions = upcomingCount,
             CompletedSessionsLast30Days = completedCount,
-            AttendanceRate = null,
-            AttendanceTrackingAvailable = false,
-            AttendanceTrackingNote = "Attendance tracking is not implemented; add an attendance entity to calculate attendance rates.",
+            AttendanceRate = attendanceRate,
+            AttendanceTrackingAvailable = true,
+            AttendanceTrackingNote = "Attendance rate is calculated from students who joined ended live sessions during the last 30 days.",
             UpcomingSessionDetails = upcomingSessions
         };
     }

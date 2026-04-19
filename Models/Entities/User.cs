@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Identity;
+using System.ComponentModel.DataAnnotations;
 
 namespace LMS_Backend.Models.Entities;
 
@@ -14,7 +15,15 @@ public class User: IdentityUser
     public String? LastName {get; set;}
     public UserStatus Status { get; set; } = UserStatus.Active;
     public string? Phone {get; set;}
+    [MaxLength(1000)]
+    public string? ProfileImageUrl { get; set; }
+    [MaxLength(300)]
+    public string? ProfileImageBlobName { get; set; }
+    [MaxLength(300)]
+    public string? AcsIdentityId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastLoginAt { get; set; }
 
+    public ICollection<LiveSession> CreatedLiveSessions { get; set; } = new List<LiveSession>();
+    public ICollection<LiveSessionAttendance> LiveSessionAttendances { get; set; } = new List<LiveSessionAttendance>();
 }

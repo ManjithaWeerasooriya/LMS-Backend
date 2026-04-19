@@ -1,13 +1,16 @@
 using System.Security.Claims;
 using LMS_Backend.Controllers;
 using LMS_Backend.Data;
+using LMS_Backend.Models.DTOs.Common;
+using LMS_Backend.Models.DTOs.Materials;
 using LMS_Backend.Models.Entities;
 using LMS_Backend.Services;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using Azure.Storage.Blobs;
+using Moq;
 
 namespace LMS_Backend.Tests.Materials;
 
@@ -71,7 +74,10 @@ public class MaterialsControllerTests
 
         var result = await controller.Upload(file, "Week 01", Guid.NewGuid());
 
-        Assert.IsType<UnauthorizedResult>(result);
+        var unauthorized = Assert.IsType<UnauthorizedObjectResult>(result);
+        var response = Assert.IsType<ApiResponse<object?>>(unauthorized.Value);
+        Assert.False(response.Success);
+        Assert.Equal("Authentication is required.", response.Message);
     }
 
     [Fact]
@@ -110,7 +116,7 @@ public class MaterialsControllerTests
         var result = await controller.GetByCourse(course.Id);
 
         var okResult = Assert.IsType<OkObjectResult>(result);
-        var materials = Assert.IsAssignableFrom<List<Material>>(okResult.Value);
+        var materials = Assert.IsAssignableFrom<IReadOnlyList<MaterialDto>>(okResult.Value);
         Assert.Single(materials);
         Assert.Equal("Lecture Slides", materials[0].Title);
     }
@@ -133,7 +139,12 @@ public class MaterialsControllerTests
 
         var result = await controller.GetByCourse(course.Id);
 
-        Assert.IsType<ForbidResult>(result);
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, objectResult.StatusCode);
+
+        var response = Assert.IsType<ApiResponse<object?>>(objectResult.Value);
+        Assert.False(response.Success);
+        Assert.Equal("You must be enrolled in the course to access its materials.", response.Message);
     }
 
     [Fact]
@@ -166,12 +177,18 @@ public class MaterialsControllerTests
 
         var result = await controller.Download(42);
 
-        Assert.IsType<ForbidResult>(result);
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, objectResult.StatusCode);
+
+        var response = Assert.IsType<ApiResponse<object?>>(objectResult.Value);
+        Assert.False(response.Success);
+        Assert.Equal("You must be enrolled in the course to access this material.", response.Message);
     }
 
     private static MaterialsController CreateController(ApplicationDBContext context, AzureStorageService storageService, ClaimsPrincipal? user)
     {
-        var controller = new MaterialsController(storageService, context)
+        var materialService = new MaterialService(context, storageService);
+        var controller = new MaterialsController(storageService, context, materialService)
         {
             ControllerContext = new ControllerContext
             {
@@ -198,9 +215,15 @@ public class MaterialsControllerTests
 
     private static AzureStorageService CreateStorageStub()
     {
+        var environment = new Mock<IWebHostEnvironment>();
+        environment.SetupGet(env => env.EnvironmentName).Returns("Development");
+
         return new AzureStorageService(
-            new BlobServiceClient("UseDevelopmentStorage=true"),
-            Options.Create(new AzureStorageOptions()));
+            Options.Create(new AzureStorageOptions
+            {
+                ConnectionString = "UseDevelopmentStorage=true"
+            }),
+            environment.Object);
     }
 
     private static ApplicationDBContext CreateDbContext(string? dbName = null)

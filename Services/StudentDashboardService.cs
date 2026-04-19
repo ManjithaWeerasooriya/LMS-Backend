@@ -30,7 +30,7 @@ public class StudentDashboardService
             .Distinct()
             .CountAsync(cancellationToken);
 
-        var myCourses = await enrollmentsQuery
+        var myCourses = (await enrollmentsQuery
             .GroupBy(e => new
             {
                 e.CourseId,
@@ -38,35 +38,42 @@ public class StudentDashboardService
                 e.Course.Teacher.FirstName,
                 e.Course.Teacher.LastName
             })
-            .Select(g => new StudentDashboardCourseItemDto
+            .Select(g => new
             {
                 CourseId = g.Key.CourseId,
                 Title = g.Key.Title,
-                InstructorName = string.Join(" ",
-                    new[] { g.Key.FirstName, g.Key.LastName }.Where(x => !string.IsNullOrWhiteSpace(x))),
+                g.Key.FirstName,
+                g.Key.LastName,
                 ProgressPercent = g.Average(e => e.ProgressPercent)
             })
             .OrderByDescending(c => c.ProgressPercent)
             .Take(4)
-            .ToListAsync(cancellationToken);
-
-        var upcomingClasses = await _dbContext.LiveClasses
-            .Include(l => l.Course)
-            .ThenInclude(c => c!.Enrollments)
-            .Where(l =>
-                l.ScheduledAt >= nowUtc &&
-                l.CourseId != null &&
-                l.Course != null &&
-                l.Course.Enrollments.Any(e => e.StudentId == studentId))
-            .OrderBy(l => l.ScheduledAt)
-            .Take(5)
-            .Select(l => new StudentDashboardLiveClassItemDto
+            .ToListAsync(cancellationToken))
+            .Select(course => new StudentDashboardCourseItemDto
             {
-                LiveClassId = l.Id,
-                Topic = l.Topic,
-                CourseTitle = l.Course != null ? l.Course.Title : null,
-                ScheduledAt = l.ScheduledAt,
-                DurationMinutes = l.DurationMinutes
+                CourseId = course.CourseId,
+                Title = course.Title,
+                InstructorName = BuildDisplayName(course.FirstName, course.LastName),
+                ProgressPercent = course.ProgressPercent
+            })
+            .ToList();
+
+        var upcomingLiveSessions = await _dbContext.LiveSessions
+            .AsNoTracking()
+            .Where(s =>
+                s.StartTime >= nowUtc &&
+                s.Status != LiveSessionStatus.Cancelled &&
+                s.Course.Enrollments.Any(e => e.StudentId == studentId))
+            .OrderBy(s => s.StartTime)
+            .Take(5)
+            .Select(s => new StudentDashboardLiveSessionItemDto
+            {
+                LiveSessionId = s.Id,
+                Title = s.Title,
+                CourseTitle = s.Course.Title,
+                StartTime = s.StartTime,
+                DurationMinutes = s.DurationMinutes,
+                Status = s.Status
             })
             .ToListAsync(cancellationToken);
 
@@ -106,12 +113,21 @@ public class StudentDashboardService
             Summary = new StudentDashboardSummaryDto
             {
                 EnrolledCourses = enrolledCoursesCount,
-                UpcomingClasses = upcomingClasses.Count,
+                UpcomingLiveSessions = upcomingLiveSessions.Count,
                 PendingQuizzes = pendingQuizzes.Count
             },
             MyCourses = myCourses,
-            UpcomingClasses = upcomingClasses,
+            UpcomingLiveSessions = upcomingLiveSessions,
             PendingQuizzes = pendingQuizzes
         };
+    }
+
+    private static string BuildDisplayName(string? firstName, string? lastName)
+    {
+        return string.Join(
+            " ",
+            new[] { firstName, lastName }
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value!.Trim()));
     }
 }
