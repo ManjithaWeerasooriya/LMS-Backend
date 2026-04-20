@@ -55,6 +55,33 @@ public class LiveSessionControllerTests
     }
 
     [Fact]
+    public async Task TeacherCreateLiveSession_WithoutAuthenticatedTeacher_ReturnsUnauthorized()
+    {
+        var serviceMock = new Mock<ILiveSessionService>();
+        var controller = CreateTeacherController(serviceMock.Object, userId: null);
+
+        var result = await controller.CreateLiveSession(
+            Guid.NewGuid(),
+            new CreateLiveSessionRequestDto
+            {
+                Title = "Unauthorized session",
+                StartTime = DateTime.UtcNow.AddHours(2),
+                DurationMinutes = 60
+            },
+            CancellationToken.None);
+
+        Assert.IsType<UnauthorizedObjectResult>(result);
+
+        serviceMock.Verify(
+            service => service.CreateLiveSessionAsync(
+                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CreateLiveSessionRequestDto>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task TeacherStartLiveSession_WithoutAuthenticatedTeacher_ReturnsUnauthorized()
     {
         var controller = CreateTeacherController(new Mock<ILiveSessionService>().Object, userId: null);
@@ -97,6 +124,24 @@ public class LiveSessionControllerTests
     }
 
     [Fact]
+    public async Task StudentGetLiveSessionById_WithoutAuthenticatedStudent_ReturnsUnauthorized()
+    {
+        var serviceMock = new Mock<ILiveSessionService>();
+        var controller = CreateStudentController(serviceMock.Object, userId: null);
+
+        var result = await controller.GetLiveSessionById(Guid.NewGuid(), CancellationToken.None);
+
+        Assert.IsType<UnauthorizedObjectResult>(result);
+
+        serviceMock.Verify(
+            service => service.GetStudentLiveSessionByIdAsync(
+                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task CreateJoinToken_ReturnsSuccessResponse_AndUsesAuthenticatedUser()
     {
         var sessionId = Guid.NewGuid();
@@ -135,6 +180,113 @@ public class LiveSessionControllerTests
         Assert.Equal("acs-user", payload.Data!.AcsUserId);
 
         joinService.VerifyAll();
+    }
+
+    [Fact]
+    public async Task CreateJoinToken_WithoutAuthenticatedUser_ReturnsUnauthorized()
+    {
+        var liveSessionService = new Mock<ILiveSessionService>();
+        var joinService = new Mock<ILiveSessionJoinService>();
+
+        var controller = CreateLiveSessionsController(
+            liveSessionService.Object,
+            joinService.Object,
+            userId: null,
+            AppRoles.Student);
+
+        var result = await controller.CreateJoinToken(Guid.NewGuid(), CancellationToken.None);
+
+        Assert.IsType<UnauthorizedObjectResult>(result);
+
+        joinService.Verify(
+            service => service.CreateJoinTokenAsync(
+                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateJoinToken_AsTeacher_ReturnsSuccessResponse()
+    {
+        var sessionId = Guid.NewGuid();
+
+        var joinToken = new LiveSessionJoinTokenResponseDto
+        {
+            AcsUserId = "acs-teacher",
+            Token = "token",
+            Session = new LiveSessionJoinMetadataDto
+            {
+                Id = sessionId,
+                CourseId = Guid.NewGuid(),
+                Title = "Teacher joinable session"
+            }
+        };
+
+        var liveSessionService = new Mock<ILiveSessionService>();
+        var joinService = new Mock<ILiveSessionJoinService>();
+
+        joinService
+            .Setup(service => service.CreateJoinTokenAsync(
+                "teacher-1",
+                sessionId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(joinToken);
+
+        var controller = CreateLiveSessionsController(
+            liveSessionService.Object,
+            joinService.Object,
+            "teacher-1",
+            AppRoles.Teacher);
+
+        var result = await controller.CreateJoinToken(sessionId, CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var payload = Assert.IsType<ApiResponse<LiveSessionJoinTokenResponseDto>>(ok.Value);
+
+        Assert.True(payload.Success);
+        Assert.Equal("acs-teacher", payload.Data!.AcsUserId);
+
+        joinService.VerifyAll();
+    }
+
+    [Fact]
+    public async Task TeacherCreateLiveSession_PassesCorrectTeacherIdAndCourseId_ToService()
+    {
+        var courseId = Guid.NewGuid();
+
+        var request = new CreateLiveSessionRequestDto
+        {
+            Title = "Teacher session",
+            StartTime = DateTime.UtcNow.AddHours(2),
+            DurationMinutes = 60
+        };
+
+        var serviceMock = new Mock<ILiveSessionService>();
+
+        serviceMock
+            .Setup(service => service.CreateLiveSessionAsync(
+                "teacher-1",
+                courseId,
+                request,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LiveSessionDto
+            {
+                Id = Guid.NewGuid(),
+                CourseId = courseId,
+                Title = "Teacher session",
+                Status = LiveSessionStatus.Scheduled
+            });
+
+        var controller = CreateTeacherController(serviceMock.Object, "teacher-1");
+
+        await controller.CreateLiveSession(courseId, request, CancellationToken.None);
+
+        serviceMock.Verify(service => service.CreateLiveSessionAsync(
+            "teacher-1",
+            courseId,
+            request,
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
