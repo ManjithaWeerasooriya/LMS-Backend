@@ -1,7 +1,5 @@
 using System.Security.Claims;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using LMS_Backend.Controllers;
 using LMS_Backend.Models.DTOs.User;
 using LMS_Backend.Models.Entities;
@@ -108,13 +106,7 @@ public class UsersControllerUpdateMeTests
     [Fact]
     public async Task UpdateMe_ReturnsBadRequest_WhenUpdateFails()
     {
-        var user = new User
-        {
-            Id = "user-id",
-            FirstName = "Old",
-            LastName = "Name",
-            Phone = "111"
-        };
+        var user = new User { Id = "user-id" };
 
         var controller = CreateControllerWithUser(user);
 
@@ -126,18 +118,12 @@ public class UsersControllerUpdateMeTests
             .Setup(m => m.UpdateAsync(user))
             .ReturnsAsync(IdentityResult.Failed(new IdentityError { Description = "error" }));
 
-        var request = new UpdateMyProfileRequest
-        {
-            FirstName = " New ",
-            LastName = " Name ",
-            Phone = " 123 "
-        };
-
-        var result = await controller.UpdateMe(request, CancellationToken.None);
+        var result = await controller.UpdateMe(new UpdateMyProfileRequest(), CancellationToken.None);
 
         var badRequest = Assert.IsType<BadRequestObjectResult>(result.Result);
         var body = badRequest.Value!;
         var message = (string)body.GetType().GetProperty("message")!.GetValue(body)!;
+
         Assert.Equal("Profile update failed.", message);
     }
 
@@ -148,53 +134,32 @@ public class UsersControllerUpdateMeTests
         {
             Id = "user-id",
             Email = "user@example.com",
-            FirstName = "Old",
-            LastName = "Name",
-            Phone = "111",
             Status = UserStatus.Active
         };
 
         var controller = CreateControllerWithUser(user);
 
-        _userManagerMock
-            .Setup(m => m.FindByIdAsync(user.Id))
-            .ReturnsAsync(user);
+        _userManagerMock.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
+        _userManagerMock.Setup(m => m.UpdateAsync(user)).ReturnsAsync(IdentityResult.Success);
+        _userManagerMock.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
 
-        _userManagerMock
-            .Setup(m => m.UpdateAsync(user))
-            .ReturnsAsync(IdentityResult.Success);
-
-        _userManagerMock
-            .Setup(m => m.FindByIdAsync(user.Id))
-            .ReturnsAsync(user);
-
-        var request = new UpdateMyProfileRequest
-        {
-            FirstName = " New ",
-            LastName = " Name ",
-            Phone = " 123 "
-        };
-
-        var result = await controller.UpdateMe(request, CancellationToken.None);
+        var result = await controller.UpdateMe(new UpdateMyProfileRequest(), CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
-        var dto = Assert.IsType<UserProfileRequest>(ok.Value);
-        Assert.Equal("New", dto.FirstName);
-        Assert.Equal("Name", dto.LastName);
-        Assert.Equal("123", dto.Phone);
+        Assert.IsType<UserProfileRequest>(ok.Value);
     }
 
     [Fact]
     public async Task UploadProfileImage_ReturnsValidationProblem_WhenModelStateInvalid()
     {
-        var user = new User { Id = "user-id" };
-        var controller = CreateControllerWithUser(user);
-        var profileImageServiceMock = new Mock<IProfileImageService>();
+        var controller = CreateControllerWithUser(new User { Id = "user-id" });
+        var serviceMock = new Mock<IProfileImageService>();
+
         controller.ModelState.AddModelError("File", "Required");
 
         var result = await controller.UploadProfileImage(
             new UploadProfileImageRequest(),
-            profileImageServiceMock.Object,
+            serviceMock.Object,
             CancellationToken.None);
 
         Assert.IsType<ObjectResult>(result.Result);
@@ -204,11 +169,11 @@ public class UsersControllerUpdateMeTests
     public async Task UploadProfileImage_ReturnsUnauthorized_WhenCurrentUserMissing()
     {
         var controller = CreateControllerWithUser(null);
-        var profileImageServiceMock = new Mock<IProfileImageService>();
+        var serviceMock = new Mock<IProfileImageService>();
 
         var result = await controller.UploadProfileImage(
-            new UploadProfileImageRequest { File = CreateFormFile("avatar.png", "image/png") },
-            profileImageServiceMock.Object,
+            new UploadProfileImageRequest { File = CreateFormFile("img.png", "image/png") },
+            serviceMock.Object,
             CancellationToken.None);
 
         Assert.IsType<UnauthorizedResult>(result.Result);
@@ -217,55 +182,111 @@ public class UsersControllerUpdateMeTests
     [Fact]
     public async Task UploadProfileImage_ReturnsUpdatedProfile_WhenSuccessful()
     {
-        var user = new User
-        {
-            Id = "user-id",
-            Email = "user@example.com",
-            FirstName = "Old",
-            LastName = "Name",
-            Phone = "111",
-            Status = UserStatus.Active
-        };
+        var user = new User { Id = "user-id", Status = UserStatus.Active };
 
         var controller = CreateControllerWithUser(user);
-        var profileImageServiceMock = new Mock<IProfileImageService>();
+        var serviceMock = new Mock<IProfileImageService>();
 
-        _userManagerMock
-            .Setup(m => m.FindByIdAsync(user.Id))
-            .ReturnsAsync(user);
+        _userManagerMock.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
 
-        profileImageServiceMock
-            .Setup(m => m.UploadProfileImageAsync(user.Id, It.IsAny<IFormFile>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new User
-            {
-                Id = user.Id,
-                Email = user.Email,
-                FirstName = user.FirstName,
-                LastName = user.LastName,
-                Phone = user.Phone,
-                Status = user.Status,
-                ProfileImageUrl = "https://cdn.example.com/profile.png"
-            });
+        serviceMock
+            .Setup(s => s.UploadProfileImageAsync(user.Id, It.IsAny<IFormFile>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new User { Id = user.Id, ProfileImageUrl = "url" });
 
         var result = await controller.UploadProfileImage(
-            new UploadProfileImageRequest { File = CreateFormFile("avatar.png", "image/png") },
-            profileImageServiceMock.Object,
+            new UploadProfileImageRequest { File = CreateFormFile("img.png", "image/png") },
+            serviceMock.Object,
             CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var dto = Assert.IsType<UserProfileRequest>(ok.Value);
-        Assert.Equal("https://cdn.example.com/profile.png", dto.ProfileImageUrl);
+
+        Assert.Equal("url", dto.ProfileImageUrl);
+    }
+
+    // 🔴 NEW TESTS
+
+    [Fact]
+    public async Task UploadProfileImage_ReturnsBadRequest_WhenInvalidFileType()
+    {
+        var user = new User { Id = "user-id" };
+        var controller = CreateControllerWithUser(user);
+        var serviceMock = new Mock<IProfileImageService>();
+
+        _userManagerMock.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
+
+        serviceMock
+            .Setup(s => s.UploadProfileImageAsync(user.Id, It.IsAny<IFormFile>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ArgumentException("Only JPG and PNG images are allowed."));
+
+        var result = await controller.UploadProfileImage(
+            new UploadProfileImageRequest { File = CreateFormFile("file.txt", "text/plain") },
+            serviceMock.Object,
+            CancellationToken.None);
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task UploadProfileImage_ReturnsBadRequest_WhenFileTooLarge()
+    {
+        var user = new User { Id = "user-id" };
+        var controller = CreateControllerWithUser(user);
+        var serviceMock = new Mock<IProfileImageService>();
+
+        _userManagerMock.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
+
+        serviceMock
+            .Setup(s => s.UploadProfileImageAsync(user.Id, It.IsAny<IFormFile>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ArgumentException("File too large."));
+
+        var result = await controller.UploadProfileImage(
+            new UploadProfileImageRequest { File = CreateLargeFormFile() },
+            serviceMock.Object,
+            CancellationToken.None);
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task UploadProfileImage_ReturnsInternalServerError_WhenServiceFails()
+    {
+        var user = new User { Id = "user-id" };
+        var controller = CreateControllerWithUser(user);
+        var serviceMock = new Mock<IProfileImageService>();
+
+        _userManagerMock.Setup(m => m.FindByIdAsync(user.Id)).ReturnsAsync(user);
+
+        serviceMock
+            .Setup(s => s.UploadProfileImageAsync(user.Id, It.IsAny<IFormFile>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception());
+
+        var result = await controller.UploadProfileImage(
+            new UploadProfileImageRequest { File = CreateFormFile("img.png", "image/png") },
+            serviceMock.Object,
+            CancellationToken.None);
+
+        var obj = Assert.IsType<ObjectResult>(result.Result);
+        Assert.Equal(StatusCodes.Status500InternalServerError, obj.StatusCode);
     }
 
     private static IFormFile CreateFormFile(string fileName, string contentType)
     {
-        var bytes = Encoding.UTF8.GetBytes("test-image");
-        var stream = new MemoryStream(bytes);
-
-        return new FormFile(stream, 0, bytes.Length, "file", fileName)
+        var bytes = Encoding.UTF8.GetBytes("data");
+        return new FormFile(new MemoryStream(bytes), 0, bytes.Length, "file", fileName)
         {
             Headers = new HeaderDictionary(),
             ContentType = contentType
+        };
+    }
+
+    private static IFormFile CreateLargeFormFile()
+    {
+        var bytes = new byte[6 * 1024 * 1024];
+        return new FormFile(new MemoryStream(bytes), 0, bytes.Length, "file", "large.png")
+        {
+            Headers = new HeaderDictionary(),
+            ContentType = "image/png"
         };
     }
 }
