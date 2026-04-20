@@ -83,13 +83,107 @@ public class LiveSessionControllerTests
     }
 
     [Fact]
+    public async Task TeacherStartLiveSession_ReturnsSuccessResponse_AndUsesTeacherIdentity()
+    {
+        var sessionId = Guid.NewGuid();
+        var responseDto = new LiveSessionDto
+        {
+            Id = sessionId,
+            CourseId = Guid.NewGuid(),
+            Title = "Started session",
+            Status = LiveSessionStatus.Live
+        };
+
+        var serviceMock = new Mock<ILiveSessionService>();
+        serviceMock
+            .Setup(service => service.StartLiveSessionAsync(
+                "teacher-1",
+                sessionId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseDto);
+
+        var controller = CreateTeacherController(serviceMock.Object, "teacher-1");
+
+        var result = await controller.StartLiveSession(sessionId, CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var payload = Assert.IsType<ApiResponse<LiveSessionDto>>(ok.Value);
+
+        Assert.True(payload.Success);
+        Assert.Equal(sessionId, payload.Data!.Id);
+        Assert.Equal(LiveSessionStatus.Live, payload.Data.Status);
+
+        serviceMock.VerifyAll();
+    }
+
+    [Fact]
     public async Task TeacherStartLiveSession_WithoutAuthenticatedTeacher_ReturnsUnauthorized()
     {
-        var controller = CreateTeacherController(new Mock<ILiveSessionService>().Object, userId: null);
+        var serviceMock = new Mock<ILiveSessionService>();
+        var controller = CreateTeacherController(serviceMock.Object, userId: null);
 
         var result = await controller.StartLiveSession(Guid.NewGuid(), CancellationToken.None);
 
         Assert.IsType<UnauthorizedObjectResult>(result);
+
+        serviceMock.Verify(
+            service => service.StartLiveSessionAsync(
+                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task TeacherEndLiveSession_ReturnsSuccessResponse_AndUsesTeacherIdentity()
+    {
+        var sessionId = Guid.NewGuid();
+        var responseDto = new LiveSessionDto
+        {
+            Id = sessionId,
+            CourseId = Guid.NewGuid(),
+            Title = "Ended session",
+            Status = LiveSessionStatus.Ended
+        };
+
+        var serviceMock = new Mock<ILiveSessionService>();
+        serviceMock
+            .Setup(service => service.EndLiveSessionAsync(
+                "teacher-1",
+                sessionId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseDto);
+
+        var controller = CreateTeacherController(serviceMock.Object, "teacher-1");
+
+        var result = await controller.EndLiveSession(sessionId, CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var payload = Assert.IsType<ApiResponse<LiveSessionDto>>(ok.Value);
+
+        Assert.True(payload.Success);
+        Assert.Equal(sessionId, payload.Data!.Id);
+        Assert.Equal(LiveSessionStatus.Ended, payload.Data.Status);
+
+        serviceMock.VerifyAll();
+    }
+
+    [Fact]
+    public async Task TeacherEndLiveSession_WithoutAuthenticatedTeacher_ReturnsUnauthorized()
+    {
+        var serviceMock = new Mock<ILiveSessionService>();
+        var controller = CreateTeacherController(serviceMock.Object, userId: null);
+
+        var result = await controller.EndLiveSession(Guid.NewGuid(), CancellationToken.None);
+
+        Assert.IsType<UnauthorizedObjectResult>(result);
+
+        serviceMock.Verify(
+            service => service.EndLiveSessionAsync(
+                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]
