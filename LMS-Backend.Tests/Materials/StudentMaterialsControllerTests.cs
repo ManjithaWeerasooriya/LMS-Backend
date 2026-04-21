@@ -153,6 +153,64 @@ public class StudentMaterialsControllerTests
         Assert.Equal("lecture-notes.pdf", fileResult.FileDownloadName);
     }
 
+    [Fact]
+public async Task DownloadMaterial_UnauthenticatedStudent_ReturnsUnauthorized()
+{
+    var service = new Mock<IMaterialService>();
+    var controller = CreateController(service.Object, user: null);
+
+    var result = await controller.DownloadMaterial(7);
+
+    var unauthorized = Assert.IsType<UnauthorizedObjectResult>(result);
+    var response = Assert.IsType<ApiResponse<object?>>(unauthorized.Value);
+    Assert.False(response.Success);
+
+    service.Verify(
+        s => s.DownloadStudentMaterialAsync(
+            It.IsAny<string>(),
+            It.IsAny<int>(),
+            It.IsAny<CancellationToken>()),
+        Times.Never);
+}
+
+[Fact]
+public async Task DownloadMaterial_NotEnrolledStudent_ReturnsForbiddenResponse()
+{
+    var service = new Mock<IMaterialService>();
+    service
+        .Setup(s => s.DownloadStudentMaterialAsync("student-6", 8, It.IsAny<CancellationToken>()))
+        .ThrowsAsync(new ForbiddenException("You must be enrolled in the course to download its materials."));
+
+    var controller = CreateController(service.Object, CreateUser("student-6"));
+
+    var result = await controller.DownloadMaterial(8);
+
+    var objectResult = Assert.IsType<ObjectResult>(result);
+    Assert.Equal(StatusCodes.Status403Forbidden, objectResult.StatusCode);
+
+    var response = Assert.IsType<ApiResponse<object?>>(objectResult.Value);
+    Assert.False(response.Success);
+    Assert.Equal("You must be enrolled in the course to download its materials.", response.Message);
+}
+
+[Fact]
+public async Task DownloadMaterial_MissingMaterial_ReturnsNotFoundResponse()
+{
+    var service = new Mock<IMaterialService>();
+    service
+        .Setup(s => s.DownloadStudentMaterialAsync("student-7", 404, It.IsAny<CancellationToken>()))
+        .ThrowsAsync(new NotFoundException("Material not found."));
+
+    var controller = CreateController(service.Object, CreateUser("student-7"));
+
+    var result = await controller.DownloadMaterial(404);
+
+    var notFound = Assert.IsType<NotFoundObjectResult>(result);
+    var response = Assert.IsType<ApiResponse<object?>>(notFound.Value);
+    Assert.False(response.Success);
+    Assert.Equal("Material not found.", response.Message);
+}
+
     private static StudentMaterialsController CreateController(IMaterialService service, ClaimsPrincipal? user)
     {
         return new StudentMaterialsController(service)
