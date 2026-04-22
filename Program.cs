@@ -12,6 +12,7 @@ using LMS_Backend.Services;
 using LMS_Backend.Services.Reporting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -33,9 +34,16 @@ builder.Services.AddHttpClient();
 builder.Services.AddScoped<IPublicService, PublicService>();
 builder.Services.AddScoped<IQuizService, QuizService>();
 
-// ======================
-// CORS (FIXED)
-// ======================
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders =
+        ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
+// CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
@@ -43,9 +51,9 @@ builder.Services.AddCors(options =>
         policy.WithOrigins(
                 "https://lmsfrontend-umber.vercel.app",
                 "https://lms-gold-tau.vercel.app",
+                "https://lms-deepananirmal.vercel.app",
                 "http://localhost:3000",
-                "https://localhost:3000",
-                "https://lms-deepananirmal.vercel.app"
+                "https://localhost:3000"
             )
             .AllowAnyHeader()
             .AllowAnyMethod()
@@ -246,14 +254,15 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+app.UseForwardedHeaders();
 
-// ======================
-// MIDDLEWARE ORDER FIXED
-// ======================
 app.UseRouting();
 
 app.UseCors("AllowFrontend");
+
+// Temporarily disable if Azure proxy keeps breaking OPTIONS preflight.
+// Re-enable later if needed after confirming forwarded headers work.
+// app.UseHttpsRedirection();
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -300,9 +309,7 @@ app.MapControllers();
 app.Run();
 
 
-// ======================
 // Helpers
-// ======================
 
 static async Task SeedIdentityAsync(WebApplication app)
 {
