@@ -5,6 +5,7 @@ using LMS_Backend.Models.DTOs;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace LMS_Backend.Services;
@@ -17,12 +18,21 @@ public class AzureStorageService
     private readonly IWebHostEnvironment _environment;
     private readonly ILogger<AzureStorageService> _logger;
 
+    // Backward-compatible constructor for existing tests/code
+    public AzureStorageService(
+        IOptions<AzureStorageOptions> options,
+        IWebHostEnvironment environment)
+        : this(options, environment, NullLogger<AzureStorageService>.Instance)
+    {
+    }
+
     public AzureStorageService(
         IOptions<AzureStorageOptions> options,
         IWebHostEnvironment environment,
         ILogger<AzureStorageService> logger)
     {
         _connectionString = options.Value.ConnectionString;
+
         _defaultContainerName = string.IsNullOrWhiteSpace(options.Value.ContainerName)
             ? AzureStorageOptions.DefaultContainerName
             : options.Value.ContainerName.Trim().ToLowerInvariant();
@@ -32,7 +42,7 @@ public class AzureStorageService
             : options.Value.ProfileImagesContainerName.Trim().ToLowerInvariant();
 
         _environment = environment;
-        _logger = logger;
+        _logger = logger ?? NullLogger<AzureStorageService>.Instance;
     }
 
     public async Task<UploadFileResult> UploadFileAsync(IFormFile file)
@@ -81,8 +91,8 @@ public class AzureStorageService
         {
             var containerClient = await GetContainerClientAsync(_profileImagesContainerName);
             var blobClient = containerClient.GetBlobClient(blobName);
-
             var result = await blobClient.DeleteIfExistsAsync();
+
             _logger.LogInformation(
                 "DeleteProfileImageIfExists completed. BlobName={BlobName}, Deleted={Deleted}",
                 blobName,
@@ -117,8 +127,8 @@ public class AzureStorageService
             }
 
             var response = await blobClient.DownloadStreamingAsync();
-
             var contentType = response.Value.Details.ContentType;
+
             if (string.IsNullOrWhiteSpace(contentType))
             {
                 contentType = "application/octet-stream";
