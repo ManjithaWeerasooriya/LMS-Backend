@@ -45,7 +45,7 @@ builder.Services.AddCors(options =>
                 "https://lms-gold-tau.vercel.app",
                 "http://localhost:3000",
                 "https://localhost:3000",
-                "https://lms-deepananirmal-fpinxdw1k-nirdeepanas-projects.vercel.app"
+                "https://https://lms-deepananirmal.vercel.app"
             )
             .AllowAnyHeader()
             .AllowAnyMethod()
