@@ -5,9 +5,12 @@ using System.Reflection;
 using System.Text;
 using LMS_Backend.Data;
 using LMS_Backend.Infrastructure.Auth;
+using LMS_Backend.Infrastructure.Exceptions;
 using LMS_Backend.Infrastructure.HealthChecks;
 using LMS_Backend.Infrastructure.Seed;
+using Microsoft.AspNetCore.Diagnostics;
 using LMS_Backend.Models.Entities;
+using System.Text.Json;
 using LMS_Backend.Services;
 using LMS_Backend.Services.Reporting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -171,10 +174,12 @@ builder.Services.AddAuthorization(options =>
 
 // Services
 builder.Services.AddScoped<TokenService>();
+builder.Services.AddScoped<IAzureStorageService, AzureStorageService>();
 builder.Services.AddScoped<IProfileImageService, ProfileImageService>();
 builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<AdminDiagnosticsService>();
 builder.Services.AddScoped<TeacherDashboardService>();
+builder.Services.AddScoped<ICourseService, CourseService>();
 builder.Services.AddScoped<CourseService>();
 builder.Services.AddScoped<IMaterialService, MaterialService>();
 builder.Services.AddScoped<ILiveSessionService, LiveSessionService>();
@@ -253,6 +258,27 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
+app.UseExceptionHandler(exceptionHandlerApp =>
+{
+    exceptionHandlerApp.Run(async context =>
+    {
+        var feature = context.Features.Get<IExceptionHandlerFeature>();
+        var exception = feature?.Error;
+
+        if (exception == null)
+        {
+            return;
+        }
+
+        var error = ApiExceptionMapper.Map(exception);
+
+        context.Response.StatusCode = error.StatusCode;
+        context.Response.ContentType = "application/json";
+
+        await context.Response.WriteAsync(JsonSerializer.Serialize(error.Body));
+    });
+});
 
 app.UseForwardedHeaders();
 

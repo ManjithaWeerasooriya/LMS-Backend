@@ -23,12 +23,12 @@ public class ProfileImageService : IProfileImageService
     private const long MaxFileSizeBytes = 5 * 1024 * 1024;
 
     private readonly UserManager<User> _userManager;
-    private readonly AzureStorageService _azureStorageService;
+    private readonly IAzureStorageService _azureStorageService;
     private readonly ILogger<ProfileImageService> _logger;
 
     public ProfileImageService(
         UserManager<User> userManager,
-        AzureStorageService azureStorageService,
+        IAzureStorageService azureStorageService,
         ILogger<ProfileImageService> logger)
     {
         _userManager = userManager;

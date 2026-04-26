@@ -12,9 +12,9 @@ namespace LMS_Backend.Controllers;
 [Authorize(Policy = AppPolicies.TeacherOnly)]
 public class TeacherCoursesController : ControllerBase
 {
-    private readonly CourseService _courseService;
+    private readonly ICourseService _courseService;
 
-    public TeacherCoursesController(CourseService courseService)
+    public TeacherCoursesController(ICourseService courseService)
     {
         _courseService = courseService;
     }
@@ -72,6 +72,11 @@ public class TeacherCoursesController : ControllerBase
         if (string.IsNullOrWhiteSpace(teacherId))
         {
             return Unauthorized();
+        }
+
+        if (!User.IsInRole(AppRoles.Teacher))
+        {
+            return Forbid();
         }
 
         var course = await _courseService.CreateCourseAsync(teacherId, dto, cancellationToken);

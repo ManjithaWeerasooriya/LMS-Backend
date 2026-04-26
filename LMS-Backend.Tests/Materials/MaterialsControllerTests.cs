@@ -5,11 +5,9 @@ using LMS_Backend.Models.DTOs.Common;
 using LMS_Backend.Models.DTOs.Materials;
 using LMS_Backend.Models.Entities;
 using LMS_Backend.Services;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using Moq;
 
 namespace LMS_Backend.Tests.Materials;
@@ -19,21 +17,22 @@ public class MaterialsControllerTests
     [Fact]
     public async Task Upload_InvalidFileType_ReturnsBadRequest()
     {
-        await using var context = CreateDbContext();
-        var controller = CreateController(context, CreateStorageStub(), CreateUser("teacher-1", "Teacher"));
+        var service = new Mock<IMaterialService>();
+        var controller = CreateController(service.Object, CreateUser("teacher-1", "Teacher"));
         var file = CreateFormFile("malware.exe", 1024, "application/octet-stream");
 
         var result = await controller.Upload(file, "Unit 1", Guid.NewGuid());
 
         var badRequest = Assert.IsType<BadRequestObjectResult>(result);
         Assert.Equal("Invalid file type.", badRequest.Value);
+        service.VerifyNoOtherCalls();
     }
 
     [Fact]
     public async Task Upload_FileTooLarge_ReturnsBadRequest()
     {
-        await using var context = CreateDbContext();
-        var controller = CreateController(context, CreateStorageStub(), CreateUser("teacher-1", "Teacher"));
+        var service = new Mock<IMaterialService>();
+        var controller = CreateController(service.Object, CreateUser("teacher-1", "Teacher"));
         var hugeFileLength = 60L * 1024 * 1024;
         var file = CreateFormFile("module.pdf", hugeFileLength, "application/pdf");
 
@@ -41,6 +40,7 @@ public class MaterialsControllerTests
 
         var badRequest = Assert.IsType<BadRequestObjectResult>(result);
         Assert.Equal("File too large. Maximum allowed size is 50 MB.", badRequest.Value);
+        service.VerifyNoOtherCalls();
     }
 
     [Fact]
@@ -57,19 +57,23 @@ public class MaterialsControllerTests
         context.Courses.Add(course);
         await context.SaveChangesAsync();
 
-        var controller = CreateController(context, CreateStorageStub(), CreateUser("teacher-2", "Teacher"));
+        var controller = CreateController(CreateService(context), CreateUser("teacher-2", "Teacher"));
         var file = CreateFormFile("notes.pdf", 2048, "application/pdf");
 
         var result = await controller.Upload(file, "Week 01", course.Id);
 
-        Assert.IsType<ForbidResult>(result);
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status403Forbidden, objectResult.StatusCode);
+
+        var response = Assert.IsType<ApiResponse<object?>>(objectResult.Value);
+        Assert.False(response.Success);
+        Assert.Equal("You do not have access to manage materials for this course.", response.Message);
     }
 
     [Fact]
     public async Task Upload_WithoutAuthenticatedUser_ReturnsUnauthorized()
     {
-        await using var context = CreateDbContext();
-        var controller = CreateController(context, CreateStorageStub(), user: null);
+        var controller = CreateController(Mock.Of<IMaterialService>(), user: null);
         var file = CreateFormFile("notes.pdf", 2048, "application/pdf");
 
         var result = await controller.Upload(file, "Week 01", Guid.NewGuid());
@@ -111,7 +115,7 @@ public class MaterialsControllerTests
         context.Materials.Add(material);
         await context.SaveChangesAsync();
 
-        var controller = CreateController(context, CreateStorageStub(), CreateUser("student-1", "Student"));
+        var controller = CreateController(CreateService(context), CreateUser("student-1", "Student"));
 
         var result = await controller.GetByCourse(course.Id);
 
@@ -135,7 +139,7 @@ public class MaterialsControllerTests
         context.Courses.Add(course);
         await context.SaveChangesAsync();
 
-        var controller = CreateController(context, CreateStorageStub(), CreateUser("student-99", "Student"));
+        var controller = CreateController(CreateService(context), CreateUser("student-99", "Student"));
 
         var result = await controller.GetByCourse(course.Id);
 
@@ -173,7 +177,7 @@ public class MaterialsControllerTests
         });
         await context.SaveChangesAsync();
 
-        var controller = CreateController(context, CreateStorageStub(), CreateUser("student-99", "Student"));
+        var controller = CreateController(CreateService(context), CreateUser("student-99", "Student"));
 
         var result = await controller.Download(42);
 
@@ -185,10 +189,9 @@ public class MaterialsControllerTests
         Assert.Equal("You must be enrolled in the course to access this material.", response.Message);
     }
 
-    private static MaterialsController CreateController(ApplicationDBContext context, AzureStorageService storageService, ClaimsPrincipal? user)
+    private static MaterialsController CreateController(IMaterialService materialService, ClaimsPrincipal? user)
     {
-        var materialService = new MaterialService(context, storageService);
-        var controller = new MaterialsController(storageService, context, materialService)
+        var controller = new MaterialsController(materialService)
         {
             ControllerContext = new ControllerContext
             {
@@ -202,6 +205,11 @@ public class MaterialsControllerTests
         return controller;
     }
 
+    private static IMaterialService CreateService(ApplicationDBContext context)
+    {
+        return new MaterialService(context, Mock.Of<IAzureStorageService>(), Microsoft.Extensions.Logging.Abstractions.NullLogger<MaterialService>.Instance);
+    }
+
     private static ClaimsPrincipal CreateUser(string userId, string role)
     {
         var identity = new ClaimsIdentity(new[]
@@ -211,19 +219,6 @@ public class MaterialsControllerTests
         }, "TestAuth");
 
         return new ClaimsPrincipal(identity);
-    }
-
-    private static AzureStorageService CreateStorageStub()
-    {
-        var environment = new Mock<IWebHostEnvironment>();
-        environment.SetupGet(env => env.EnvironmentName).Returns("Development");
-
-        return new AzureStorageService(
-            Options.Create(new AzureStorageOptions
-            {
-                ConnectionString = "UseDevelopmentStorage=true"
-            }),
-            environment.Object);
     }
 
     private static ApplicationDBContext CreateDbContext(string? dbName = null)
