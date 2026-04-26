@@ -24,7 +24,7 @@ const BASE_URL = 'http://localhost:5251';
 export default function () {
   const payload = JSON.stringify({
     email:    'inuransira@gmail.com',
-    password: 'Google@2009!',
+    password: 'Google@2009',
     deviceId: 'k6-spike-device',   // spike-test.js
     // deviceId: `k6-stress-device-${__VU}`,  // stress-test.js
   });
