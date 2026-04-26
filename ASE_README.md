@@ -172,3 +172,92 @@ cd ../LiveSessions
 k6 run spike-test.js
 k6 run stress-test.js
 ```
+
+
+## 👨‍💻 Team Member 4
+
+**Name:** W.G.I.C Premathilaka
+**IT Number:** IT23613904
+
+### 🔍 Focus Area
+
+* Data-Driven Load Testing (K6)
+* Performance Analysis of ASP.NET Core API Endpoints
+
+### ✅ Contributions
+
+* **Implemented Data-Driven Load Testing Using K6**
+
+  * Created a K6 test suite that reads user credentials and roles from a CSV file
+  * Designed the test to simulate realistic LMS traffic using separate student and teacher accounts
+  * Ensured the test behavior is driven by input data instead of hardcoded user logic
+
+* **Built Multiple Request User Flows**
+
+  * Developed load test scenarios that execute several API requests in sequence
+  * Simulated actual backend usage instead of testing only a single endpoint
+  * Included authentication followed by role-based API requests for student and teacher users
+
+* **Tested Varied API Endpoints**
+
+  * Covered multiple backend route groups:
+    * `/api/public/...`
+    * `/api/v1/users/...`
+    * `/api/v1/student/...`
+    * `/api/v1/teacher/...`
+    * `/api/v1/admin/...`
+  * Tested different LMS backend features such as:
+    * public browsing
+    * authentication
+    * dashboards
+    * courses
+    * materials
+    * quizzes
+    * reports
+
+* **Implemented Three Main K6 Scenarios**
+
+  * **Public Browse Scenario**
+    * Tested anonymous access to platform statistics and public course endpoints
+  * **Student Flow Scenario**
+    * Tested login, profile, dashboard, enrolled courses, quizzes, and course materials
+  * **Teacher Flow Scenario**
+    * Tested login, profile, dashboard, courses, course quizzes, and reports overview
+
+* **Performance Metrics and Threshold Validation**
+
+  * Used K6 built-in metrics to monitor:
+    * request duration
+    * failed request rate
+    * check pass rate
+  * Applied thresholds to validate:
+    * response time performance
+    * request reliability
+    * overall API stability under load
+
+* **Dynamic Endpoint Testing**
+
+  * Designed the script to retrieve course IDs and quiz IDs dynamically from API responses
+  * Reduced hardcoded values in the load test
+  * Improved flexibility and realism of the test execution flow
+
+### 📊 Impact
+
+* Demonstrated that the LMS backend supports data-driven load testing
+* Validated backend behavior under multiple sequential requests
+* Verified system performance across varied API endpoints and user roles
+* Improved confidence in the stability of student and teacher backend services
+* Provided a simple but effective K6-based load testing solution for the LMS project
+
+### ▶️ How to Run (K6 Tests Only)
+
+```bash
+# Run ASP.NET Core backend first
+cd LMS-Backend
+dotnet run
+
+# Run the K6 load test
+k6 run .\load-tests\load-test.js
+
+# Optional small demo run
+k6 run -e DURATION=30s -e PUBLIC_VUS=1 -e STUDENT_VUS=1 -e TEACHER_VUS=1 .\load-tests\load-test.js
