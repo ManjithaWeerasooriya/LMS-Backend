@@ -1,0 +1,3 @@
+email,password,role,deviceId
+inuransira@gmail.com,Google@2009,student,student-device-01
+admin@lms.local,Admin123!,teacher,teacher-device-01
