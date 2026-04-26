@@ -20,6 +20,8 @@ public class CourseService : ICourseService
         CreateCourseRequestDto dto,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(dto);
+
         var status = CourseStatus.Active;
         if (!string.IsNullOrWhiteSpace(dto.Status) &&
             Enum.TryParse<CourseStatus>(dto.Status, true, out var parsedStatus))
@@ -135,6 +137,8 @@ public class CourseService : ICourseService
         CreateCourseRequestDto dto,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(dto);
+
         var course = await GetCourseAsync(id, teacherId, cancellationToken);
         if (course == null) return false;
 
