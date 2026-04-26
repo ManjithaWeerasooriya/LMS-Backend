@@ -1,6 +1,6 @@
 using System.Security.Claims;
+using LMS_Backend.Infrastructure.Exceptions;
 using LMS_Backend.Models.DTOs.Common;
-using LMS_Backend.Models.Exceptions;
 using Microsoft.AspNetCore.Mvc;
 
 namespace LMS_Backend.Controllers;
@@ -25,15 +25,15 @@ public abstract class ApiControllerBase : ControllerBase
     protected IActionResult UnauthorizedResponse() =>
         Unauthorized(ApiResponse<object?>.ErrorResponse("Authentication is required."));
 
-    protected IActionResult HandleException(Exception exception) =>
-        exception switch
+    protected IActionResult HandleException(Exception exception)
+    {
+        var error = ApiExceptionMapper.Map(exception);
+        return error.StatusCode switch
         {
-            NotFoundException => NotFound(ApiResponse<object?>.ErrorResponse(exception.Message)),
-            ForbiddenException => StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object?>.ErrorResponse(exception.Message)),
-            ConflictException => Conflict(ApiResponse<object?>.ErrorResponse(exception.Message)),
-            ServiceUnavailableException => StatusCode(StatusCodes.Status503ServiceUnavailable, ApiResponse<object?>.ErrorResponse(exception.Message)),
-            InvalidOperationException => BadRequest(ApiResponse<object?>.ErrorResponse(exception.Message)),
-            ArgumentException => BadRequest(ApiResponse<object?>.ErrorResponse(exception.Message)),
-            _ => StatusCode(StatusCodes.Status500InternalServerError, ApiResponse<object?>.ErrorResponse("An unexpected error occurred."))
+            StatusCodes.Status400BadRequest => BadRequest(error.Body),
+            StatusCodes.Status404NotFound => NotFound(error.Body),
+            StatusCodes.Status409Conflict => Conflict(error.Body),
+            _ => StatusCode(error.StatusCode, error.Body)
         };
+    }
 }
