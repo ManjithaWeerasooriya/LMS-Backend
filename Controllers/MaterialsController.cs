@@ -1,10 +1,7 @@
-using LMS_Backend.Data;
 using LMS_Backend.Infrastructure.Auth;
-using LMS_Backend.Models.Entities;
 using LMS_Backend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace LMS_Backend.Controllers;
 
@@ -12,8 +9,6 @@ namespace LMS_Backend.Controllers;
 [Route("api/v1/teacher/materials")]
 public class MaterialsController : ApiControllerBase
 {
-    private readonly AzureStorageService _azureStorageService;
-    private readonly ApplicationDBContext _dbContext;
     private readonly IMaterialService _materialService;
 
     private static readonly string[] AllowedExtensions =
@@ -38,13 +33,8 @@ public class MaterialsController : ApiControllerBase
 
     private const long MaxFileSizeBytes = 50 * 1024 * 1024; // 50 MB
 
-    public MaterialsController(
-        AzureStorageService azureStorageService,
-        ApplicationDBContext dbContext,
-        IMaterialService materialService)
+    public MaterialsController(IMaterialService materialService)
     {
-        _azureStorageService = azureStorageService;
-        _dbContext = dbContext;
         _materialService = materialService;
     }
 
@@ -77,40 +67,35 @@ public class MaterialsController : ApiControllerBase
         if (string.IsNullOrEmpty(userId))
             return UnauthorizedResponse();
 
-        var ownsCourse = await IsTeacherOwnerOfCourse(userId, courseId);
-        if (!ownsCourse)
-            return Forbid();
-
-        var uploadResult = await _azureStorageService.UploadFileAsync(file);
-
         var finalTitle = string.IsNullOrWhiteSpace(title)
             ? Path.GetFileNameWithoutExtension(file.FileName)
             : title;
 
-        var material = new Material
+        try
         {
-            Title = finalTitle,
-            FileUrl = uploadResult.FileUrl,
-            BlobName = uploadResult.BlobName,
-            ContentType = contentType,
-            MaterialType = GetMaterialType(contentType, file.FileName),
-            FileSize = file.Length,
-            CourseId = courseId,
-            CreatedAt = DateTime.UtcNow
-        };
+            var material = await _materialService.UploadTeacherMaterialAsync(
+                userId,
+                courseId,
+                file,
+                finalTitle,
+                contentType,
+                GetMaterialType(contentType, file.FileName),
+                HttpContext.RequestAborted);
 
-        _dbContext.Materials.Add(material);
-        await _dbContext.SaveChangesAsync();
-
-        return Ok(new
+            return Ok(new
+            {
+                message = "File uploaded successfully",
+                material.Id,
+                material.Title,
+                material.FileUrl,
+                material.MaterialType,
+                material.CourseId
+            });
+        }
+        catch (Exception ex)
         {
-            message = "File uploaded successfully",
-            material.Id,
-            material.Title,
-            material.FileUrl,
-            material.MaterialType,
-            material.CourseId
-        });
+            return HandleException(ex);
+        }
     }
 
     [HttpGet("course/{courseId:guid}")]
@@ -274,11 +259,5 @@ public class MaterialsController : ApiControllerBase
         // for file parts even when the extension is valid.
         return string.Equals(contentType, "application/octet-stream", StringComparison.OrdinalIgnoreCase)
             && AllowedExtensions.Contains(extension);
-    }
-
-    private async Task<bool> IsTeacherOwnerOfCourse(string userId, Guid courseId)
-    {
-        return await _dbContext.Courses
-            .AnyAsync(c => c.Id == courseId && c.TeacherId == userId);
     }
 }

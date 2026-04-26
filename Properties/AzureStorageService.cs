@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 
 namespace LMS_Backend.Services;
 
-public class AzureStorageService
+public class AzureStorageService : IAzureStorageService
 {
     private readonly string? _connectionString;
     private readonly string _defaultContainerName;
@@ -104,6 +104,29 @@ public class AzureStorageService
                 "Failed deleting profile image. BlobName={BlobName}, Container={Container}",
                 blobName,
                 _profileImagesContainerName);
+            throw;
+        }
+    }
+
+    public async Task DeleteFileIfExistsAsync(string blobName)
+    {
+        try
+        {
+            var containerClient = await GetContainerClientAsync(_defaultContainerName);
+            var blobClient = containerClient.GetBlobClient(blobName);
+            var result = await blobClient.DeleteIfExistsAsync();
+
+            _logger.LogInformation(
+                "DeleteFileIfExists completed. BlobName={BlobName}, Deleted={Deleted}",
+                blobName,
+                result.Value);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed deleting material file. BlobName={BlobName}, Container={Container}",
+                blobName,
+                _defaultContainerName);
             throw;
         }
     }

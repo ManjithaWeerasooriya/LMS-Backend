@@ -174,6 +174,7 @@ builder.Services.AddAuthorization(options =>
 
 // Services
 builder.Services.AddScoped<TokenService>();
+builder.Services.AddScoped<IAzureStorageService, AzureStorageService>();
 builder.Services.AddScoped<IProfileImageService, ProfileImageService>();
 builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<AdminDiagnosticsService>();

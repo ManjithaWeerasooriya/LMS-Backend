@@ -5,12 +5,9 @@ using LMS_Backend.Models.DTOs.Common;
 using LMS_Backend.Models.DTOs.Materials;
 using LMS_Backend.Models.Entities;
 using LMS_Backend.Services;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
-using Moq;
 
 namespace LMS_Backend.Tests.Materials;
 
@@ -54,7 +51,7 @@ public class MaterialsPositiveFlowTests
             });
         await context.SaveChangesAsync();
 
-        var controller = CreateController(context, CreateStorageStub(), CreateUser("teacher-1", "Teacher"));
+        var controller = CreateController(context, CreateUser("teacher-1", "Teacher"));
         var result = await controller.GetByCourse(course.Id);
 
         var ok = Assert.IsType<OkObjectResult>(result);
@@ -89,7 +86,7 @@ public class MaterialsPositiveFlowTests
         context.Materials.Add(material);
         await context.SaveChangesAsync();
 
-        var controller = CreateController(context, CreateStorageStub(), CreateUser("teacher-1", "Teacher"));
+        var controller = CreateController(context, CreateUser("teacher-1", "Teacher"));
         var result = await controller.GetById(material.Id);
 
         var ok = Assert.IsType<OkObjectResult>(result);
@@ -123,7 +120,7 @@ public class MaterialsPositiveFlowTests
         });
         await context.SaveChangesAsync();
 
-        var controller = CreateController(context, CreateStorageStub(), CreateUser("teacher-2", "Teacher"));
+        var controller = CreateController(context, CreateUser("teacher-2", "Teacher"));
         var result = await controller.GetByCourse(course.Id);
 
         var objectResult = Assert.IsType<ObjectResult>(result);
@@ -134,10 +131,14 @@ public class MaterialsPositiveFlowTests
         Assert.Equal("You do not have access to manage materials for this course.", response.Message);
     }
 
-    private static MaterialsController CreateController(ApplicationDBContext context, AzureStorageService storage, ClaimsPrincipal user)
+    private static MaterialsController CreateController(ApplicationDBContext context, ClaimsPrincipal user)
     {
-        var materialService = new MaterialService(context, storage);
-        return new MaterialsController(storage, context, materialService)
+        var materialService = new MaterialService(
+            context,
+            Moq.Mock.Of<IAzureStorageService>(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<MaterialService>.Instance);
+
+        return new MaterialsController(materialService)
         {
             ControllerContext = new ControllerContext
             {
@@ -162,18 +163,5 @@ public class MaterialsPositiveFlowTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
         return new ApplicationDBContext(options);
-    }
-
-    private static AzureStorageService CreateStorageStub()
-    {
-        var environment = new Mock<IWebHostEnvironment>();
-        environment.SetupGet(env => env.EnvironmentName).Returns("Development");
-
-        return new AzureStorageService(
-            Options.Create(new AzureStorageOptions
-            {
-                ConnectionString = "UseDevelopmentStorage=true"
-            }),
-            environment.Object);
     }
 }

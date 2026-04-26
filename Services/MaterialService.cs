@@ -2,21 +2,66 @@ using LMS_Backend.Data;
 using LMS_Backend.Models.DTOs.Materials;
 using LMS_Backend.Models.Entities;
 using LMS_Backend.Models.Exceptions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace LMS_Backend.Services;
 
 public class MaterialService : IMaterialService
 {
     private readonly ApplicationDBContext _context;
-    private readonly AzureStorageService _azureStorageService;
+    private readonly IAzureStorageService _azureStorageService;
+    private readonly ILogger<MaterialService> _logger;
 
     public MaterialService(
         ApplicationDBContext context,
-        AzureStorageService azureStorageService)
+        IAzureStorageService azureStorageService,
+        ILogger<MaterialService> logger)
     {
         _context = context;
         _azureStorageService = azureStorageService;
+        _logger = logger;
+    }
+
+    public async Task<MaterialDto> UploadTeacherMaterialAsync(
+        string teacherId,
+        Guid courseId,
+        IFormFile file,
+        string title,
+        string contentType,
+        string materialType,
+        CancellationToken cancellationToken)
+    {
+        await EnsureTeacherOwnsCourseAsync(teacherId, courseId, cancellationToken);
+
+        var uploadResult = await _azureStorageService.UploadFileAsync(file);
+
+        var material = new Material
+        {
+            Title = title,
+            FileUrl = uploadResult.FileUrl,
+            BlobName = uploadResult.BlobName,
+            ContentType = contentType,
+            MaterialType = materialType,
+            FileSize = file.Length,
+            CourseId = courseId,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _context.Materials.Add(material);
+
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch
+        {
+            await CleanupUploadedMaterialAsync(uploadResult.BlobName);
+            throw;
+        }
+
+        return ToMaterialDto(material);
     }
 
     public async Task<IReadOnlyList<MaterialDto>> GetTeacherMaterialsByCourseAsync(
@@ -226,6 +271,18 @@ public class MaterialService : IMaterialService
         catch (FileNotFoundException ex)
         {
             throw new NotFoundException("File not found in storage.", ex);
+        }
+    }
+
+    private async Task CleanupUploadedMaterialAsync(string blobName)
+    {
+        try
+        {
+            await _azureStorageService.DeleteFileIfExistsAsync(blobName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to clean up uploaded material blob {BlobName} after a database failure.", blobName);
         }
     }
 
