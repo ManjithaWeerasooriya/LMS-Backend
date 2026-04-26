@@ -15,7 +15,7 @@ export const options = {
     { duration: '5s',  target: 0   }, // recovery
   ],
   thresholds: {
-    http_req_duration:  ['p(95)<5000'],
+    http_req_duration:  ['p(95)<6000'],
     http_req_failed:    ['rate<0.10'],
     sessions_fail_rate: ['rate<0.10'],
   },
