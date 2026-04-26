@@ -76,6 +76,20 @@ public class CourseServiceTests
     }
 
     [Fact]
+    public async Task CreateCourseAsync_ThrowsArgumentNullException_WhenDtoIsNull()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = new CourseService(dbContext);
+
+        var exception = await Assert.ThrowsAsync<ArgumentNullException>(() => service.CreateCourseAsync(
+            "teacher-1",
+            null!,
+            CancellationToken.None));
+
+        Assert.Equal("dto", exception.ParamName);
+    }
+
+    [Fact]
     public async Task GetCoursesForTeacherAsync_ReturnsOnlyTeachersCourses_FilteredAndOrdered()
     {
         await using var dbContext = CreateDbContext();
@@ -217,6 +231,30 @@ public class CourseServiceTests
 
         Assert.False(updated);
         Assert.Equal("Secured Course", (await dbContext.Courses.SingleAsync()).Title);
+    }
+
+    [Fact]
+    public async Task UpdateCourseAsync_ThrowsArgumentNullException_WhenDtoIsNull()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.Courses.Add(new Course
+        {
+            TeacherId = "teacher-1",
+            Title = "Course",
+            Status = CourseStatus.Active
+        });
+        await dbContext.SaveChangesAsync();
+
+        var course = await dbContext.Courses.SingleAsync();
+        var service = new CourseService(dbContext);
+
+        var exception = await Assert.ThrowsAsync<ArgumentNullException>(() => service.UpdateCourseAsync(
+            course.Id,
+            "teacher-1",
+            null!,
+            CancellationToken.None));
+
+        Assert.Equal("dto", exception.ParamName);
     }
 
     [Fact]

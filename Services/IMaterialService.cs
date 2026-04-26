@@ -1,9 +1,19 @@
 using LMS_Backend.Models.DTOs.Materials;
+using Microsoft.AspNetCore.Http;
 
 namespace LMS_Backend.Services;
 
 public interface IMaterialService
 {
+    Task<MaterialDto> UploadTeacherMaterialAsync(
+        string teacherId,
+        Guid courseId,
+        IFormFile file,
+        string title,
+        string contentType,
+        string materialType,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyList<MaterialDto>> GetTeacherMaterialsByCourseAsync(
         string teacherId,
         Guid courseId,

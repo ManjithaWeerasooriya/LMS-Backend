@@ -12,9 +12,9 @@ namespace LMS_Backend.Controllers;
 [Authorize(Policy = AppPolicies.StudentOnly)]
 public class StudentCoursesController : ControllerBase
 {
-    private readonly CourseService _courseService;
+    private readonly ICourseService _courseService;
 
-    public StudentCoursesController(CourseService courseService)
+    public StudentCoursesController(ICourseService courseService)
     {
         _courseService = courseService;
     }
@@ -80,6 +80,7 @@ public class StudentCoursesController : ControllerBase
         return result.ErrorCode switch
         {
             "CourseNotFound" => NotFound(new { message = result.ErrorMessage }),
+            "AlreadyEnrolled" => Conflict(new { message = result.ErrorMessage }),
             "CourseNotActive" => BadRequest(new { message = result.ErrorMessage }),
             "CourseFull" => Conflict(new { message = result.ErrorMessage }),
             _ => StatusCode(500, new { message = "Unable to enroll in course." })

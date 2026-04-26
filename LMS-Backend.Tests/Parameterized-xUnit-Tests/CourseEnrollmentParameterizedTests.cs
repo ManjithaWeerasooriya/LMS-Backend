@@ -13,7 +13,7 @@ public class CourseEnrollmentParameterizedTests
     [InlineData(false, CourseStatus.Active, false, 0, 0, false, "CourseNotFound", 0)]
     [InlineData(true, CourseStatus.Draft, false, 0, 0, false, "CourseNotActive", 0)]
     [InlineData(true, CourseStatus.Archived, false, 0, 0, false, "CourseNotActive", 0)]
-    [InlineData(true, CourseStatus.Active, true, 0, 1, true, null, 1)]
+    [InlineData(true, CourseStatus.Active, true, 0, 1, false, "AlreadyEnrolled", 1)]
     [InlineData(true, CourseStatus.Active, false, 1, 1, false, "CourseFull", 1)]
     [InlineData(true, CourseStatus.Active, false, 2, 1, true, null, 2)]
     public async Task EnrollStudentInCourseAsync_ShouldReturnExpectedResult(
