@@ -89,3 +89,86 @@ dotnet test LMS-Backend.Tests/LMS-Backend.Tests.csproj --filter FullyQualifiedNa
 * Increased test reliability through proper mocking
 * Enhanced coverage for edge cases and failure scenarios
 * Reduced risk of inconsistent data (file upload failures)
+
+## 👨‍💻 Team Member 3
+
+**Name:** R.M.D.N. Jayaweera  
+**IT Number:** IT23742918
+
+### 🔍 Focus Area
+
+* Load Testing (K6)
+* Performance & Stress Analysis (ASP.NET Core APIs)
+
+### ✅ Contributions
+
+* **Spike Testing (Login, Materials, Live Sessions)**
+
+  * Simulated sudden user surges (0 → 100 users) on ASP.NET Core API endpoints
+  * Evaluated system stability under real-world peak scenarios
+  * Detected high failure rate in login endpoint under sudden load
+
+* **Stress Testing (Login, Materials, Live Sessions)**
+
+  * Gradually increased virtual users to identify system breaking points
+  * Measured performance degradation of ASP.NET Core services under load
+  * Determined maximum capacity limits of each endpoint
+
+* **Performance Analysis of API Endpoints**
+
+  * Tested three critical ASP.NET Core endpoints:
+    * `/api/v1/auth/login`
+    * `/api/v1/student/courses/{courseId}/materials`
+    * `/api/v1/student/courses/{courseId}/live-sessions`
+  * Compared behavior of:
+    * Write-heavy operations (Login – authentication, JWT generation)
+    * Read-heavy operations (Materials, Live Sessions)
+
+* **Custom Metrics Implementation**
+
+  * Implemented K6 metrics to track:
+    * Response time (avg, min, max, p95)
+    * Failure rates
+    * Endpoint-specific performance trends
+
+* **Performance Bottleneck Identification**
+
+  * **Login endpoint** (ASP.NET Core + Azure SQL):
+    * High failure rate (~81% at 100 users)
+    * Azure SQL connection pool exhaustion
+    * Performance affected by password hashing and JWT generation
+  * **Materials endpoint**:
+    * 0% failure rate under load
+    * Highly optimized read operations using database queries
+  * **Live Sessions endpoint**:
+    * No failures but higher response time
+    * Slower due to complex database joins across multiple tables
+
+### 📊 Impact
+
+* Identified critical performance bottlenecks in ASP.NET Core authentication flow
+* Provided insights for database optimization and connection pooling
+* Improved understanding of system scalability limits
+* Validated API reliability under real-world load conditions
+* Ensured stability of high-traffic student features
+
+### ▶️ How to Run (K6 Tests Only)
+
+```bash
+# Run ASP.NET Core backend first
+cd LMS-Backend
+dotnet run
+
+# Run K6 tests
+cd LMS-Backend.Tests/K6-tests/Login
+k6 run spike-test.js
+k6 run stress-test.js
+
+cd ../Materials
+k6 run spike-test.js
+k6 run stress-test.js
+
+cd ../LiveSessions
+k6 run spike-test.js
+k6 run stress-test.js
+```
