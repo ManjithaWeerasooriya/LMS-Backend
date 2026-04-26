@@ -63,7 +63,7 @@ public class StudentCourseServiceTests
     }
 
     [Fact]
-    public async Task EnrollStudentInCourseAsync_ReturnsSuccessWithoutDuplicate_WhenStudentAlreadyEnrolled()
+    public async Task EnrollStudentInCourseAsync_ReturnsConflict_WhenStudentAlreadyEnrolled()
     {
         await using var dbContext = CreateDbContext();
         var course = new Course
@@ -87,7 +87,9 @@ public class StudentCourseServiceTests
         var service = new CourseService(dbContext);
         var result = await service.EnrollStudentInCourseAsync(course.Id, "student-1", CancellationToken.None);
 
-        Assert.True(result.Success);
+        Assert.False(result.Success);
+        Assert.Equal("AlreadyEnrolled", result.ErrorCode);
+        Assert.Equal("Student is already enrolled in this course.", result.ErrorMessage);
         Assert.Single(dbContext.CourseEnrollments);
     }
 

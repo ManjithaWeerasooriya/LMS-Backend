@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LMS_Backend.Services;
 
-public class CourseService
+public class CourseService : ICourseService
 {
     private readonly ApplicationDBContext _dbContext;
 
@@ -204,13 +204,6 @@ public class CourseService
         return true;
     }
 
-    public class CourseEnrollmentResult
-    {
-        public bool Success { get; init; }
-        public string? ErrorCode { get; init; }
-        public string? ErrorMessage { get; init; }
-    }
-
     public async Task<CourseEnrollmentResult> EnrollStudentInCourseAsync(
         Guid courseId,
         string studentId,
@@ -243,8 +236,12 @@ public class CourseService
         var existing = course.Enrollments.FirstOrDefault(e => e.StudentId == studentId);
         if (existing is not null)
         {
-            // Idempotent: already enrolled is treated as success.
-            return new CourseEnrollmentResult { Success = true };
+            return new CourseEnrollmentResult
+            {
+                Success = false,
+                ErrorCode = "AlreadyEnrolled",
+                ErrorMessage = "Student is already enrolled in this course."
+            };
         }
 
         if (course.MaxStudents > 0 && course.Enrollments.Count >= course.MaxStudents)
