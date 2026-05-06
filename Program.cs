@@ -64,7 +64,9 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Database
+// ============================================
+// DATABASE CONFIGURATION - FIXED FOR CONCURRENT LOAD
+// ============================================
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 if (string.IsNullOrWhiteSpace(connectionString))
 {
@@ -78,7 +80,13 @@ builder.Services.AddDbContext<ApplicationDBContext>(options =>
             maxRetryCount: 5,
             maxRetryDelay: TimeSpan.FromSeconds(10),
             errorNumbersToAdd: null);
-    }));
+        sql.CommandTimeout(30);  // Set query timeout to 30 seconds
+    }),
+    ServiceLifetime.Transient);  // Changed from default Scoped to Transient for better concurrency
+
+// ============================================
+// END DATABASE CONFIGURATION
+// ============================================
 
 var azureStorageConnectionString = FirstNonEmpty(
     builder.Configuration[$"{AzureStorageOptions.SectionName}:ConnectionString"],
@@ -335,7 +343,9 @@ app.MapControllers();
 app.Run();
 
 
-// Helpers
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
 
 static async Task SeedIdentityAsync(WebApplication app)
 {
